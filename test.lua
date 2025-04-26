@@ -1,9 +1,5 @@
--- NOTE: This script requires a working Roblox exploit executor
--- Remote Explorer for Bubble Gum Simulator and other Roblox games
-
 local Repository = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
 
--- === Load the GUI Library ===
 local success, Library = pcall(function()
     return loadstring(game:HttpGet(Repository .. "Library.lua"))()
 end)
@@ -18,33 +14,28 @@ local Options = Library.Options
 local Toggles = Library.Toggles
 local Notifications = Library.Notify
 
--- Check if running on mobile
 local UserInputService = game:GetService("UserInputService")
 local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled and not UserInputService.MouseEnabled
 
--- === Create the Main Window ===
 local Window = Library:CreateWindow({
     Title = "Remote Explorer",
     Footer = "Remote Scanner by AI | GUI by s.eths / Obsidian",
     NotifySide = "Right",
-    ShowCustomCursor = not isMobile, -- Disable custom cursor on mobile
+    ShowCustomCursor = not isMobile,
 })
 
--- === Define Tabs ===
 local Tabs = {
     RemoteExplorer = Window:AddTab("Remote Explorer", "search"),
     UISettings = Window:AddTab("UI Settings", "settings"),
 }
 
--- === Remote Explorer Tab Content ===
 local FilterGroupbox = Tabs.RemoteExplorer:AddLeftGroupbox("Filters")
 local RemoteListGroupbox = Tabs.RemoteExplorer:AddRightGroupbox("Found Remotes")
 
--- Storage for found remotes
 local allRemotes = {}
 local filteredRemotes = {}
+local foundPaths = {} -- To prevent duplicates efficiently
 
--- Filter options
 FilterGroupbox:AddInput("SearchFilter", {
     Text = "Search Remotes",
     Placeholder = "Enter name or path...",
@@ -53,7 +44,6 @@ FilterGroupbox:AddInput("SearchFilter", {
     end
 })
 
--- Exclude Roblox system remotes by default
 local excludeRobloxRemotes = FilterGroupbox:AddToggle("ExcludeRobloxRemotes", {
     Text = "Exclude Roblox System Remotes",
     Default = true,
@@ -62,16 +52,14 @@ local excludeRobloxRemotes = FilterGroupbox:AddToggle("ExcludeRobloxRemotes", {
     end
 })
 
--- Only show game-specific remotes
 local onlyGameRemotes = FilterGroupbox:AddToggle("OnlyGameRemotes", {
     Text = "Only Game Remotes",
-    Default = true, 
+    Default = true,
     Callback = function(value)
         applyFilters()
     end
 })
 
--- Filter by remote type
 local showRemoteEvents = FilterGroupbox:AddToggle("ShowRemoteEvents", {
     Text = "Show RemoteEvents",
     Default = true,
@@ -88,121 +76,143 @@ local showRemoteFunctions = FilterGroupbox:AddToggle("ShowRemoteFunctions", {
     end
 })
 
--- Add a label to display the remote list
 local RemoteListLabel = RemoteListGroupbox:AddLabel("Click 'Scan Remotes' to start.")
 
--- Button to scan for remotes
+local bgsKeywords = {"blow", "sell", "collect", "upgrade", "buy", "hatch", "equip",
+                     "unequip", "teleport", "claim", "rebirth", "craft", "click", "autoclick",
+                     "open", "reward", "interact", "network", "remote", "event"}
+
+local function addRemote(instance)
+    if not (instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction")) then return end
+
+    local path = instance:GetFullName()
+    if foundPaths[path] then return end
+
+    foundPaths[path] = true
+    table.insert(allRemotes, {
+        Type = instance.ClassName,
+        Name = instance.Name,
+        Path = path,
+        Instance = instance
+    })
+end
+
+local function findRemotesIn(container, containerName)
+    if typeof(container) ~= "Instance" then return end
+    RemoteListLabel:SetText("Scanning " .. containerName .. "...")
+    local success, err = pcall(function()
+        for _, instance in ipairs(container:GetDescendants()) do
+            addRemote(instance)
+            task.wait() -- Add a small yield to prevent freezing on huge containers
+        end
+    end)
+    if not success then
+        warn("Error scanning " .. containerName .. ":", err)
+        Notifications({ Title = "Scan Warning", Description = "Error scanning " .. containerName .. ". Some remotes might be missed.", Type = "Warning", Time = 5 })
+    end
+end
+
+local function performScan()
+    allRemotes = {}
+    foundPaths = {}
+
+    RemoteListLabel:SetText("Starting scan...")
+    task.wait(0.1)
+
+    local commonLocations = {
+        {game:GetService("ReplicatedStorage"), "ReplicatedStorage"},
+        {game:GetService("Workspace"), "Workspace"},
+        {game:GetService("Players").LocalPlayer and game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui"), "PlayerGui"},
+        {game:GetService("Players").LocalPlayer and game:GetService("Players").LocalPlayer:FindFirstChild("PlayerScripts"), "PlayerScripts"},
+        {game:GetService("StarterPlayer") and game:GetService("StarterPlayer"):FindFirstChild("StarterPlayerScripts"), "StarterPlayerScripts"},
+        {game:GetService("StarterGui"), "StarterGui"}
+    }
+
+    for _, data in ipairs(commonLocations) do
+        findRemotesIn(data[1], data[2])
+        task.wait(0.1)
+    end
+
+    RemoteListLabel:SetText("Performing final deep scan (may take a moment)...")
+    task.wait(0.1)
+    local success, err = pcall(function()
+        for _, instance in ipairs(game:GetDescendants()) do
+            addRemote(instance)
+            if #allRemotes % 100 == 0 then task.wait() end -- Yield occasionally during deep scan
+        end
+    end)
+     if not success then
+        warn("Error during deep scan:", err)
+        Notifications({ Title = "Scan Warning", Description = "Error during deep scan. Some remotes might be missed.", Type = "Warning", Time = 5 })
+    end
+
+    RemoteListLabel:SetText("Searching by keywords...")
+    task.wait(0.1)
+    local successKeywords, errKeywords = pcall(function()
+        for _, instance in ipairs(game:GetDescendants()) do
+             if (instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction")) then
+                 local name = instance.Name:lower()
+                 for _, keyword in ipairs(bgsKeywords) do
+                     if name:match(keyword) then
+                         addRemote(instance)
+                         break
+                     end
+                 end
+             end
+             if #allRemotes % 100 == 0 then task.wait() end -- Yield occasionally
+        end
+    end)
+    if not successKeywords then
+        warn("Error during keyword scan:", errKeywords)
+        Notifications({ Title = "Scan Warning", Description = "Error during keyword scan. Some remotes might be missed.", Type = "Warning", Time = 5 })
+    end
+
+
+    table.sort(allRemotes, function(a, b)
+        return a.Path < b.Path
+    end)
+
+    return true
+end
+
 FilterGroupbox:AddButton({
     Text = "Scan / Refresh Remotes",
-    Tooltip = "Scans the entire game for RemoteEvents and RemoteFunctions.",
+    Tooltip = "Scans the game for RemoteEvents and RemoteFunctions.",
     Func = function()
-        RemoteListLabel:SetText("Scanning for remotes...")
-        
+        RemoteListLabel:SetText("Initiating scan...")
+
         task.spawn(function()
-            allRemotes = {}
-            
-            -- Standard scan for all remotes
-            for _, instance in ipairs(game:GetDescendants()) do
-                if instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction") then
-                    table.insert(allRemotes, {
-                        Type = instance.ClassName,
-                        Name = instance.Name,
-                        Path = instance:GetFullName(),
-                        Instance = instance
-                    })
-                end
+            local scanSuccess, scanError = pcall(performScan)
+
+            if not scanSuccess then
+                RemoteListLabel:SetText("Scan failed: " .. tostring(scanError))
+                Notifications({
+                    Title = "Scan Failed",
+                    Description = "An error occurred during scanning: " .. tostring(scanError),
+                    Time = 5,
+                    Type = "Error"
+                })
+                return
             end
-            
-            -- Specifically look for Bubble Gum Simulator remotes in common locations
-            local bgsPaths = {
-                game:GetService("ReplicatedStorage").Events,
-                game:GetService("ReplicatedStorage").Remotes,
-                game:GetService("ReplicatedStorage").Network,
-                game:GetService("ReplicatedStorage").Modules
-            }
-            
-            for _, container in pairs(bgsPaths) do
-                if typeof(container) == "Instance" then
-                    for _, instance in pairs(container:GetDescendants()) do
-                        if instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction") then
-                            -- Check if we already found this remote in the standard scan
-                            local alreadyFound = false
-                            for _, remote in ipairs(allRemotes) do
-                                if remote.Path == instance:GetFullName() then
-                                    alreadyFound = true
-                                    break
-                                end
-                            end
-                            
-                            if not alreadyFound then
-                                table.insert(allRemotes, {
-                                    Type = instance.ClassName,
-                                    Name = instance.Name,
-                                    Path = instance:GetFullName(),
-                                    Instance = instance
-                                })
-                            end
-                        end
-                    end
-                end
-            end
-            
-            -- Look for key remotes by name patterns common in Bubble Gum Simulator
-            local bgsKeywords = {"blow", "sell", "collect", "upgrade", "buy", "hatch", "equip", 
-                                "unequip", "teleport", "claim", "rebirth", "craft"}
-            
-            for _, instance in pairs(game:GetDescendants()) do
-                if (instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction")) then
-                    local name = instance.Name:lower()
-                    for _, keyword in ipairs(bgsKeywords) do
-                        if name:match(keyword) then
-                            -- Check if already found
-                            local alreadyFound = false
-                            for _, remote in ipairs(allRemotes) do
-                                if remote.Path == instance:GetFullName() then
-                                    alreadyFound = true
-                                    break
-                                end
-                            end
-                            
-                            if not alreadyFound then
-                                table.insert(allRemotes, {
-                                    Type = instance.ClassName,
-                                    Name = instance.Name,
-                                    Path = instance:GetFullName(),
-                                    Instance = instance
-                                })
-                            end
-                            break
-                        end
-                    end
-                end
-            end
-            
-            -- Sort remotes by path for easier reading
-            table.sort(allRemotes, function(a, b)
-                return a.Path < b.Path
-            end)
-            
+
             applyFilters()
-            
+
             Notifications({
                 Title = "Scan Complete",
-                Description = "Found " .. #allRemotes .. " remotes. Filtered: " .. #filteredRemotes,
-                Time = 3
+                Description = "Found " .. #allRemotes .. " total remotes. Displaying " .. #filteredRemotes .. " based on filters.",
+                Time = 4
             })
         end)
     end
 })
 
--- Button to copy remotes to clipboard (positioned well for mobile)
 local CopyButtonContainer = RemoteListGroupbox:AddDivider()
 RemoteListGroupbox:AddButton({
     Text = "Copy Remote List to Clipboard",
     Tooltip = "Copies the currently displayed list of remotes to your clipboard.",
     Func = function()
         local textToCopy = formatRemotesForCopy(filteredRemotes)
-        
+
         if textToCopy ~= "" then
             if setclipboard then
                 setclipboard(textToCopy)
@@ -230,91 +240,89 @@ RemoteListGroupbox:AddButton({
     end
 })
 
--- Function to format remotes for clipboard
 function formatRemotesForCopy(remotesList)
     if #remotesList == 0 then return "" end
-    
+
     local text = "Found " .. #remotesList .. " Remotes:\n"
-    
+
     for _, remote in ipairs(remotesList) do
         text = text .. remote.Type .. ": " .. remote.Name .. " (" .. remote.Path .. ")\n"
     end
-    
+
     return text
 end
 
--- Function to update the remote list display based on filters
 function applyFilters()
     local searchText = Options.SearchFilter.Value:lower()
     local excludeRoblox = Toggles.ExcludeRobloxRemotes.Value
     local onlyGame = Toggles.OnlyGameRemotes.Value
     local showEvents = Toggles.ShowRemoteEvents.Value
     local showFunctions = Toggles.ShowRemoteFunctions.Value
-    
+
     filteredRemotes = {}
-    
+
     for _, remote in ipairs(allRemotes) do
         local include = true
-        
-        -- Filter by type
+
         if (remote.Type == "RemoteEvent" and not showEvents) or
            (remote.Type == "RemoteFunction" and not showFunctions) then
             include = false
         end
-        
-        -- Filter by search text
+
         if searchText ~= "" and not (remote.Name:lower():find(searchText) or remote.Path:lower():find(searchText)) then
             include = false
         end
-        
-        -- Exclude Roblox system remotes
-        if excludeRoblox and (remote.Path:match("^RobloxReplicatedStorage") or 
-                             remote.Path:match("^RobloxGui") or
-                             remote.Path:match("^CoreGui")) then
+
+        if excludeRoblox and (remote.Path:match("^Instance%.RobloxReplicatedStorage") or
+                             remote.Path:match("^Instance%.RobloxGui") or
+                             remote.Path:match("^Instance%.CoreGui") or
+                             remote.Path:match("^CoreGui") or -- Added just in case
+                             remote.Path:match("^RobloxGui") ) then -- Added just in case
             include = false
         end
-        
-        -- Only game remotes (not in RobloxReplicatedStorage, CoreGui or CoreScripts)
-        if onlyGame and (remote.Path:match("^RobloxReplicatedStorage") or
+
+        if onlyGame and (remote.Path:match("^Instance%.RobloxReplicatedStorage") or
+                        remote.Path:match("^Instance%.CoreGui") or
+                        remote.Path:match("^Instance%.CoreScripts") or
                         remote.Path:match("^CoreGui") or
-                        remote.Path:match("^CoreScripts")) then
+                        remote.Path:match("^RobloxGui") or
+                        remote.Path:match("^CoreScripts")) then -- Added just in case
             include = false
         end
-        
+
         if include then
             table.insert(filteredRemotes, remote)
         end
     end
-    
-    -- Update the display
+
     updateRemoteList()
 end
 
--- Function to update the remote list display
 function updateRemoteList()
     local listText
-    
+
     if #filteredRemotes == 0 then
         if #allRemotes == 0 then
             listText = "No remotes found. Try scanning first."
         else
-            listText = "No remotes match your filters. Try adjusting filters or search."
+            listText = "No remotes match your filters (" .. #allRemotes .. " total found)."
         end
     else
-        listText = "Found " .. #filteredRemotes .. " Remotes:\n"
-        
-        for _, remote in ipairs(filteredRemotes) do
-            listText = listText .. remote.Type .. ": " .. remote.Name .. " (" .. remote.Path .. ")\n"
+        listText = "Found " .. #filteredRemotes .. " / " .. #allRemotes .. " Remotes:\n\n" -- Added total count
+
+        for i, remote in ipairs(filteredRemotes) do
+             -- Add numbering and slightly better formatting
+            listText = listText .. i .. ". [" .. remote.Type:sub(1, 6) .. "] " .. remote.Name .. "\n   Path: " .. remote.Path .. "\n"
+            if i > 200 then -- Limit displayed remotes to prevent lag with huge lists
+                 listText = listText .. "\n... (list truncated for performance) ..."
+                 break
+            end
         end
     end
-    
+
     RemoteListLabel:SetText(listText)
 end
 
--- === UI Settings Tab Content (Optional, from your original script) ===
--- This section configures the GUI library itself (keybind, DPI, saving, etc.)
-
--- Load ThemeManager and SaveManager (assuming they are next to Library.lua)
 local successTM, ThemeManager = pcall(function()
     return loadstring(game:HttpGet(Repository .. "addons/ThemeManager.lua"))()
 end)
@@ -325,11 +333,9 @@ end)
 if not successTM then warn("Failed to load ThemeManager:", ThemeManager) end
 if not successSM then warn("Failed to load SaveManager:", SaveManager) end
 
--- Add UI Settings Groupbox
 local TabsUISettingsLeft = Tabs.UISettings:AddLeftGroupbox("Menu")
 local TabsUISettingsRight = Tabs.UISettings:AddRightGroupbox("Appearance & Saving")
 
--- Menu Groupbox
 TabsUISettingsLeft:AddToggle("KeybindMenuOpen", {
     Default = Library.KeybindFrame.Visible;
     Text = "Open Keybind Menu";
@@ -339,7 +345,7 @@ TabsUISettingsLeft:AddToggle("KeybindMenuOpen", {
 });
 TabsUISettingsLeft:AddToggle("ShowCustomCursor", {
     Text = "Custom Cursor";
-    Default = isMobile and false or true; -- Disable on mobile by default
+    Default = not isMobile;
     Callback = function(Value)
         Library.ShowCustomCursor = Value;
         Window.ShowCustomCursor = Value;
@@ -377,7 +383,6 @@ TabsUISettingsLeft:AddButton("Unload Script", function()
     Library:Unload();
 end);
 
--- Appearance & Saving Groupbox
 if ThemeManager and SaveManager then
      ThemeManager:ApplyToTab(Tabs.UISettings)
      SaveManager:BuildConfigSection(Tabs.UISettings)
@@ -395,8 +400,17 @@ else
     TabsUISettingsRight:AddLabel("Theme/Save Managers not loaded.")
 end
 
--- Run initial scan
 task.spawn(function()
-    task.wait(1) -- Wait a bit for the game to fully load
-    FilterGroupbox:FindFirstChild("Scan / Refresh Remotes").Func()
+    task.wait(2)
+    local scanButton = FilterGroupbox:FindFirstChildWhichIsA("Button", true)
+    while not scanButton or scanButton.Text ~= "Scan / Refresh Remotes" do
+        task.wait(0.5)
+        scanButton = FilterGroupbox:FindFirstChildWhichIsA("Button", true)
+    end
+    if scanButton and scanButton.Func then
+         scanButton.Func()
+    else
+        warn("Could not find Scan button to trigger initial scan.")
+        RemoteListLabel:SetText("Ready. Click 'Scan / Refresh Remotes'.")
+    end
 end)
