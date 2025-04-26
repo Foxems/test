@@ -19,7 +19,7 @@ local UserInputService = game:GetService("UserInputService")
 local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled and not UserInputService.MouseEnabled
 
 local Window = Library:CreateWindow({
-    Title = "Remote Explorer & Spy", -- Updated Title
+    Title = "Remote Explorer & Spy",
     Footer = "Scanner/Spy by AI | GUI by s.eths / Obsidian",
     NotifySide = "Right",
     ShowCustomCursor = not isMobile,
@@ -27,11 +27,11 @@ local Window = Library:CreateWindow({
 
 local Tabs = {
     RemoteExplorer = Window:AddTab("Remote Explorer", "search"),
-    RemoteSpy = Window:AddTab("Remote Spy", "eye"), -- New Tab
+    RemoteSpy = Window:AddTab("Remote Spy", "eye"),
     UISettings = Window:AddTab("UI Settings", "settings"),
 }
 
--- === Remote Explorer Tab Content (Mostly Unchanged) ===
+-- === Remote Explorer Tab Content ===
 local FilterGroupbox = Tabs.RemoteExplorer:AddLeftGroupbox("Filters")
 local RemoteListGroupbox = Tabs.RemoteExplorer:AddRightGroupbox("Found Remotes")
 
@@ -52,7 +52,6 @@ local excludeRobloxRemotes = FilterGroupbox:AddToggle("ExcludeRobloxRemotes", {
     Default = true,
     Callback = function(value)
         applyFilters()
-        -- Also apply to spy filter if active
         if isSpying then updateSpyLogDisplay() end
     end
 })
@@ -62,7 +61,6 @@ local onlyGameRemotes = FilterGroupbox:AddToggle("OnlyGameRemotes", {
     Default = true,
     Callback = function(value)
         applyFilters()
-        -- Also apply to spy filter if active
         if isSpying then updateSpyLogDisplay() end
     end
 })
@@ -72,7 +70,6 @@ local showRemoteEvents = FilterGroupbox:AddToggle("ShowRemoteEvents", {
     Default = true,
     Callback = function(value)
         applyFilters()
-        -- Also apply to spy filter if active
         if isSpying then updateSpyLogDisplay() end
     end
 })
@@ -82,7 +79,6 @@ local showRemoteFunctions = FilterGroupbox:AddToggle("ShowRemoteFunctions", {
     Default = true,
     Callback = function(value)
         applyFilters()
-        -- Also apply to spy filter if active
         if isSpying then updateSpyLogDisplay() end
     end
 })
@@ -299,25 +295,29 @@ local SpyLogGroupbox = Tabs.RemoteSpy:AddRightGroupbox("Logged Calls")
 
 local loggedCalls = {}
 local isSpying = false
-local original_namecall
+local original_namecall -- Stores the original __namecall method
 local namecallHooked = false
-local MAX_LOG_ENTRIES = 150 -- Limit log size
+local MAX_LOG_ENTRIES = 150
 
 local SpyLogLabel = SpyLogGroupbox:AddLabel("Spying is stopped.")
 
--- Function to format arguments for display
 local function formatArgs(...)
     local args = {...}
     local formatted = {}
     for i, v in ipairs(args) do
         local t = type(v)
         if t == "string" then
-            table.insert(formatted, '"' .. tostring(v):gsub('"', '\\"') .. '"') -- Enclose strings in quotes, escape inner quotes
+            local str = tostring(v)
+            if #str > 50 then str = str:sub(1, 50) .. "..." end -- Truncate long strings
+            table.insert(formatted, '"' .. str:gsub('"', '\\"'):gsub("\n", "\\n") .. '"')
         elseif t == "table" then
-            -- Basic table representation, could be expanded for deeper inspection
-            table.insert(formatted, tostring(v) .. " (table)")
+            table.insert(formatted, tostring(v) .. " (table)") -- Basic table representation
         elseif t == "Instance" then
              table.insert(formatted, tostring(v) .. " [" .. v.ClassName .. "]")
+        elseif t == "nil" then
+             table.insert(formatted, "nil")
+        elseif t == "userdata" then
+             table.insert(formatted, tostring(v) .. " (userdata)")
         else
             table.insert(formatted, tostring(v))
         end
@@ -325,18 +325,15 @@ local function formatArgs(...)
     return table.concat(formatted, ", ")
 end
 
--- Function to update the spy log display
 function updateSpyLogDisplay()
     local displayText = "Logged Calls (" .. #loggedCalls .. "):\n\n"
     local displayCount = 0
 
-    -- Iterate backwards to show newest first
     for i = #loggedCalls, 1, -1 do
         local call = loggedCalls[i]
         local include = true
         local pathLower = call.Path:lower()
 
-        -- Apply filters similar to the scanner
         if (call.Type == "RemoteEvent" and not Toggles.ShowRemoteEvents.Value) or
            (call.Type == "RemoteFunction" and not Toggles.ShowRemoteFunctions.Value) then
             include = false
@@ -352,7 +349,7 @@ function updateSpyLogDisplay()
         if include then
             displayCount = displayCount + 1
             displayText = displayText .. displayCount .. ". [" .. call.Type:sub(1,6) .. "] " .. call.Path .. "\n   Args: " .. call.Args .. "\n   Time: " .. call.Timestamp .. "\n"
-            if displayCount >= 50 then -- Limit displayed entries for performance
+            if displayCount >= 50 then
                  displayText = displayText .. "\n... (display truncated, " .. (#loggedCalls - i + 1) .. " total logged matching filters) ..."
                  break
             end
@@ -368,11 +365,11 @@ function updateSpyLogDisplay()
     SpyLogLabel:SetText(displayText)
 end
 
--- The replacement __namecall function
 local function hooked_namecall(self, ...)
     local method = getnamecallmethod()
     local args = {...}
 
+    -- Log the call if spying is active and it's a relevant remote method
     if isSpying and (method == "FireServer" or method == "InvokeServer") and typeof(self) == "Instance" and (self:IsA("RemoteEvent") or self:IsA("RemoteFunction")) then
         local path = self:GetFullName()
         local callData = {
@@ -382,212 +379,293 @@ local function hooked_namecall(self, ...)
             Timestamp = os.date("%H:%M:%S")
         }
 
-        table.insert(loggedCalls, 1, callData) -- Insert at the beginning for newest first
+        table.insert(loggedCalls, 1, callData)
 
-        -- Limit the log size
         if #loggedCalls > MAX_LOG_ENTRIES then
-            table.remove(loggedCalls, #loggedCalls) -- Remove the oldest entry
+            table.remove(loggedCalls, #loggedCalls)
         end
 
-        -- Update the display (consider debouncing this if performance is an issue)
-        task.spawn(updateSpyLogDisplay)
+        task.spawn(updateSpyLogDisplay) -- Update display asynchronously
     end
 
-    -- Crucially, call the original function so the remote actually fires/invokes
-    -- Use assert to ensure original_namecall is valid before calling
-    assert(original_namecall, "Original __namecall method not found or invalid!")
-    return original_namecall(self, ...)
-end
-
--- Button to Start/Stop Spying
-local spyToggleButton
-spyToggleButton = SpyControlGroupbox:AddButton({
-    Text = "Start Spying",
-    Tooltip = "Starts capturing RemoteEvent/Function calls.",
-    Func = function()
-        if isSpying then
-            -- Stop Spying
-            if namecallHooked and original_namecall then
-                local success, err = pcall(function()
-                    setnamecallmethod(original_namecall)
-                end)
-                if success then
-                    isSpying = false
-                    namecallHooked = false
-                    spyToggleButton:SetText("Start Spying")
-                    spyToggleButton:SetTooltip("Starts capturing RemoteEvent/Function calls.")
-                    SpyLogLabel:SetText("Spying stopped. " .. #loggedCalls .. " calls logged.")
-                    Notifications({ Title = "Spy Stopped", Description = "Remote call logging disabled.", Time = 3 })
-                else
-                    warn("Failed to restore original __namecall:", err)
-                    Notifications({ Title = "Spy Error", Description = "Failed to stop spying cleanly.", Time = 4, Type = "Error" })
-                end
-            else
-                 isSpying = false -- Force stop even if hook state is weird
-                 spyToggleButton:SetText("Start Spying")
-                 SpyLogLabel:SetText("Spying stopped (hook state uncertain).")
-                 warn("Attempted to stop spying, but hook state was unexpected.")
-            end
-        else
-            -- Start Spying
-            if not namecallHooked then
-                local success, err = pcall(function()
-                    original_namecall = getnamecallmethod() -- Store the original
-                    setnamecallmethod(hooked_namecall) -- Set our hook
-                end)
-                if success then
-                    isSpying = true
-                    namecallHooked = true
-                    spyToggleButton:SetText("Stop Spying")
-                    spyToggleButton:SetTooltip("Stops capturing RemoteEvent/Function calls.")
-                    SpyLogLabel:SetText("Spying active... Waiting for calls...")
-                    Notifications({ Title = "Spy Started", Description = "Logging RemoteEvent/Function calls.", Time = 3 })
-                else
-                    warn("Failed to hook __namecall:", err)
-                    Notifications({ Title = "Spy Error", Description = "Failed to start spying. Hook failed.", Time = 4, Type = "Error" })
-                    isSpying = false
-                    namecallHooked = false -- Ensure state is correct on failure
-                end
-            else
-                -- Already hooked but wasn't spying? Just enable spying flag.
-                isSpying = true
-                spyToggleButton:SetText("Stop Spying")
-                SpyLogLabel:SetText("Spying active... Waiting for calls...")
-                Notifications({ Title = "Spy Resumed", Description = "Logging RemoteEvent/Function calls.", Time = 3 })
-            end
-        end
-    end
-})
-
--- Button to Clear Log
-SpyControlGroupbox:AddButton({
-    Text = "Clear Log",
-    Tooltip = "Clears the captured remote call log.",
-    Func = function()
-        loggedCalls = {}
-        updateSpyLogDisplay()
-        Notifications({ Title = "Log Cleared", Description = "Remote spy log has been cleared.", Time = 2 })
-    end
-})
-
--- Add a divider
-SpyControlGroupbox:AddDivider()
-
--- Add info label about filters
-SpyControlGroupbox:AddLabel("Spy log uses filters from the 'Remote Explorer' tab.")
-
-
--- === UI Settings Tab Content (Copied from previous context) ===
-local successTM, ThemeManager = pcall(function()
-    return loadstring(game:HttpGet(Repository .. "addons/ThemeManager.lua"))()
-end)
-local successSM, SaveManager = pcall(function()
-    return loadstring(game:HttpGet(Repository .. "addons/SaveManager.lua"))()
-end)
-
-if not successTM then warn("Failed to load ThemeManager:", ThemeManager) end
-if not successSM then warn("Failed to load SaveManager:", SaveManager) end
-
-local TabsUISettingsLeft = Tabs.UISettings:AddLeftGroupbox("Menu")
-local TabsUISettingsRight = Tabs.UISettings:AddRightGroupbox("Appearance & Saving")
-
-TabsUISettingsLeft:AddToggle("KeybindMenuOpen", {
-    Default = Library.KeybindFrame.Visible;
-    Text = "Open Keybind Menu";
-    Callback = function(value)
-        Library.KeybindFrame.Visible = value;
-    end;
-});
-TabsUISettingsLeft:AddToggle("ShowCustomCursor", {
-    Text = "Custom Cursor";
-    Default = not isMobile;
-    Callback = function(Value)
-        Library.ShowCustomCursor = Value;
-        Window.ShowCustomCursor = Value;
-    end;
-});
-TabsUISettingsLeft:AddDropdown("NotificationSide", {
-    Values = {"Left", "Right"};
-    Default = "Right";
-    Text = "Notification Side";
-    Callback = function(Value)
-        Library:SetNotifySide(Value);
-    end;
-});
-TabsUISettingsLeft:AddDropdown("DPIDropdown", {
-    Values = {"50%", "75%", "100%", "125%", "150%", "175%", "200%"};
-    Default = "100%";
-    Text = "DPI Scale";
-    Callback = function(Value)
-        Value = Value:gsub("%%", "");
-        local DPI = tonumber(Value);
-        if DPI then
-            Library:SetDPIScale(DPI / 100);
-        end
-    end;
-});
-TabsUISettingsLeft:AddDivider()
-local MenuKeyPicker = TabsUISettingsLeft:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", {Default = "RightShift", NoUI = true, Text = "Menu keybind"});
-
-Library.ToggleKeybind = Options.MenuKeybind;
-Options.MenuKeybind:OnChanged(function(newValue)
-    Library.ToggleKeybind = newValue
-end)
-
-TabsUISettingsLeft:AddButton("Unload Script", function()
-    -- Attempt to unhook namecall cleanly before unloading
-    if namecallHooked and original_namecall then
-        pcall(setnamecallmethod, original_namecall)
-    end
-    Library:Unload();
-end);
-
-if ThemeManager and SaveManager then
-     ThemeManager:ApplyToTab(Tabs.UISettings)
-     SaveManager:BuildConfigSection(Tabs.UISettings)
-     SaveManager:SetFolder("Remote Explorer Settings")
-     SaveManager:IgnoreThemeSettings();
-     SaveManager:SetIgnoreIndexes({"MenuKeybind"});
-     SaveManager:LoadAutoloadConfig();
-
-     Notifications({
-        Title = "Remote Explorer/Spy Loaded",
-        Description = "Press '" .. tostring(Library.ToggleKeybind) .. "' to toggle menu visibility.",
-        Time = 5
-     })
-else
-    TabsUISettingsRight:AddLabel("Theme/Save Managers not loaded.")
-     Notifications({
-        Title = "Remote Explorer/Spy Loaded",
-        Description = "Press RightShift (default) to toggle menu. Theme/Save managers failed.",
-        Time = 6,
-        Type = "Warning"
-     })
-end
-
--- Initial Scan on Load (Delayed)
-task.spawn(function()
-    task.wait(2)
-    local scanButton = FilterGroupbox:FindFirstChild("Scan / Refresh Remotes")
-    if scanButton and scanButton.Func then
-         Notifications({ Title = "Auto-Scan", Description = "Performing initial remote scan...", Time = 2})
-         scanButton.Func()
+    -- Call the original __namecall method
+    -- Added check: Ensure original_namecall is actually callable before calling it
+    if type(original_namecall) == "function" then
+        return original_namecall(self, ...)
     else
-        warn("Could not find Scan button to trigger initial scan.")
-        RemoteListLabel:SetText("Ready. Click 'Scan / Refresh Remotes'.")
-         Notifications({ Title = "Ready", Description = "Click 'Scan / Refresh Remotes' to begin.", Time = 4, Type = "Warning"})
-    end
-end)
 
--- Ensure namecall is restored if the script errors or is stopped abruptly (best effort)
-local connection
-connection = game:GetService("RunService").Stepped:Connect(function()
-    -- A simple check; more robust cleanup might be needed depending on the exploit environment
-    if not Library or not Library.Loaded then
-        if namecallHooked and original_namecall then
-             pcall(setnamecallmethod, original_namecall)
-             warn("Script unloaded/stopped, attempted to restore __namecall.")
+            -- If original_namecall is somehow invalid (e.g., nil), we can't proceed with the original call.
+        -- Warn the user, but don't error out the entire script if possible.
+        -- Depending on the exploit, not calling the original might break game functionality.
+        warn("Cannot call original __namecall - it's not a function (Type: " .. type(original_namecall) .. "). Game functionality might be affected.")
+            -- Decide what to return. Returning nil is often safest when the original cannot be called.
+            return nil
         end
-        if connection then connection:Disconnect() end
+    end -- End of hooked_namecall function
+    
+    -- Button to Start/Stop Spying
+    local spyToggleButton
+    spyToggleButton = SpyControlGroupbox:AddButton({
+        Text = "Start Spying",
+        Tooltip = "Starts capturing RemoteEvent/Function calls.",
+        Func = function()
+            if isSpying then
+                -- Stop Spying
+                if namecallHooked and type(original_namecall) == "function" then -- Check if we have a valid original to restore
+                    print("Attempting to stop spying and restore original __namecall...")
+                    local success, err = pcall(function()
+                        setnamecallmethod(original_namecall)
+                    end)
+                    if success then
+                        isSpying = false
+                        namecallHooked = false
+                        original_namecall = nil -- Clear the stored original after successful restore
+                        spyToggleButton:SetText("Start Spying")
+                        spyToggleButton:SetTooltip("Starts capturing RemoteEvent/Function calls.")
+                        SpyLogLabel:SetText("Spying stopped. " .. #loggedCalls .. " calls logged.")
+                        Notifications({ Title = "Spy Stopped", Description = "Remote call logging disabled.", Time = 3 })
+                        print("Spying stopped successfully. Restored original __namecall.")
+                    else
+                        warn("Failed to restore original __namecall:", tostring(err))
+                        Notifications({ Title = "Spy Error", Description = "Failed to stop spying cleanly: " .. tostring(err), Time = 4, Type = "Error" })
+                        -- Keep isSpying true? Or force stop? Forcing stop might be safer to avoid unexpected behavior.
+                        isSpying = false
+                        namecallHooked = false -- Assume hook is broken if restore failed
+                        spyToggleButton:SetText("Start Spying (Error)")
+                        SpyLogLabel:SetText("Spying stopped (restore failed).")
+                    end
+                elseif namecallHooked and type(original_namecall) ~= "function" then
+                     -- Hook was set, but the original we stored is invalid. Can't restore properly.
+                     warn("Cannot restore original __namecall - stored value is invalid (Type: " .. type(original_namecall) .. ").")
+                     Notifications({ Title = "Spy Warning", Description = "Cannot restore original __namecall. May need script restart.", Time = 5, Type = "Warning" })
+                     isSpying = false
+                     -- Assume hook is broken if we can't restore.
+                     namecallHooked = false
+                     spyToggleButton:SetText("Start Spying (Error)")
+                     SpyLogLabel:SetText("Spying stopped (cannot restore).")
+                else
+                     -- Wasn't spying or hook wasn't set according to flags. Just ensure state is stopped.
+                     isSpying = false
+                     namecallHooked = false -- Ensure flag consistency
+                     spyToggleButton:SetText("Start Spying")
+                     SpyLogLabel:SetText("Spying stopped (was not active or hook invalid).")
+                     warn("Attempted to stop spying, but state indicated it wasn't active or hooked.")
+                end
+            else
+                -- Start Spying
+                print("Attempting to start spying...")
+                if not namecallHooked then
+                    -- Explicitly check if the necessary functions exist first
+                    if type(getnamecallmethod) ~= "function" then
+                        warn("Cannot start spying: 'getnamecallmethod' is not available in this environment (Type: " .. type(getnamecallmethod) .. ").")
+                        Notifications({ Title = "Spy Error", Description = "'getnamecallmethod' not found.", Time = 5, Type = "Error" })
+                        return -- Stop execution of this function
+                    end
+                     if type(setnamecallmethod) ~= "function" then
+                        warn("Cannot start spying: 'setnamecallmethod' is not available in this environment (Type: " .. type(setnamecallmethod) .. ").")
+                        Notifications({ Title = "Spy Error", Description = "'setnamecallmethod' not found.", Time = 5, Type = "Error" })
+                        return -- Stop execution of this function
+                    end
+                    print("'getnamecallmethod' and 'setnamecallmethod' seem to exist.")
+    
+                    -- Attempt to get the original namecall method
+                    local get_success, original_method_or_error = pcall(getnamecallmethod)
+                    if not get_success then
+                         warn("Error calling getnamecallmethod:", tostring(original_method_or_error))
+                         Notifications({ Title = "Spy Error", Description = "Failed to get original namecall: " .. tostring(original_method_or_error), Time = 5, Type = "Error" })
+                         return
+                    end
+                    print("Successfully called getnamecallmethod.")
+    
+                    -- Check if the returned original method is actually callable (a function or nil is usually expected)
+                    if type(original_method_or_error) ~= "function" and original_method_or_error ~= nil then
+                         warn("getnamecallmethod returned an unexpected type:", type(original_method_or_error), "- Value:", tostring(original_method_or_error))
+                         Notifications({ Title = "Spy Warning", Description = "Original namecall has unexpected type: " .. type(original_method_or_error), Time = 5, Type = "Warning" })
+                         -- Proceed with caution, store it anyway for potential restoration
+                    end
+    
+                    original_namecall = original_method_or_error -- Store the result (function or nil or other)
+                    print("Original __namecall method obtained (Type: " .. type(original_namecall) .. ")")
+    
+                    -- Attempt to set the new namecall method
+                    print("Attempting to set hooked_namecall...")
+                    local set_success, set_error = pcall(setnamecallmethod, hooked_namecall)
+                    if set_success then
+                        print("Successfully set hooked_namecall.")
+                        isSpying = true
+                        namecallHooked = true
+                        spyToggleButton:SetText("Stop Spying")
+                        spyToggleButton:SetTooltip("Stops capturing RemoteEvent/Function calls.")
+                        SpyLogLabel:SetText("Spying active... Waiting for calls...")
+                        Notifications({ Title = "Spy Started", Description = "Logging RemoteEvent/Function calls.", Time = 3 })
+                        print("Spying started successfully. Hooked __namecall.")
+                    else
+                        warn("Failed to hook __namecall with setnamecallmethod:", tostring(set_error))
+                        Notifications({ Title = "Spy Error", Description = "Failed to set hook: " .. tostring(set_error), Time = 5, Type = "Error" })
+                        isSpying = false
+                        namecallHooked = false
+                        original_namecall = nil -- Clear if setting failed, as we can't restore anyway
+                        print("Failed to start spying.")
+                    end
+                else
+                    -- Already hooked but wasn't spying? Just enable spying flag.
+                    isSpying = true
+                    spyToggleButton:SetText("Stop Spying")
+                    SpyLogLabel:SetText("Spying active... Waiting for calls...")
+                    Notifications({ Title = "Spy Resumed", Description = "Logging RemoteEvent/Function calls.", Time = 3 })
+                    print("Spying resumed (hook was already active).")
+                end
+            end
+        end
+    })
+    
+    -- Button to Clear Log
+    SpyControlGroupbox:AddButton({
+        Text = "Clear Log",
+        Tooltip = "Clears the captured remote call log.",
+        Func = function()
+            loggedCalls = {}
+            updateSpyLogDisplay()
+            Notifications({ Title = "Log Cleared", Description = "Remote spy log has been cleared.", Time = 2 })
+        end
+    })
+    
+    -- Add a divider
+    SpyControlGroupbox:AddDivider()
+    
+    -- Add info label about filters
+    SpyControlGroupbox:AddLabel("Spy log uses filters from the 'Remote Explorer' tab.")
+    
+    
+    -- === UI Settings Tab Content (Copied from previous context) ===
+    local successTM, ThemeManager = pcall(function()
+        return loadstring(game:HttpGet(Repository .. "addons/ThemeManager.lua"))()
+    end)
+    local successSM, SaveManager = pcall(function()
+        return loadstring(game:HttpGet(Repository .. "addons/SaveManager.lua"))()
+    end)
+    
+    if not successTM then warn("Failed to load ThemeManager:", ThemeManager) end
+    if not successSM then warn("Failed to load SaveManager:", SaveManager) end
+    
+    local TabsUISettingsLeft = Tabs.UISettings:AddLeftGroupbox("Menu")
+    local TabsUISettingsRight = Tabs.UISettings:AddRightGroupbox("Appearance & Saving")
+    
+    TabsUISettingsLeft:AddToggle("KeybindMenuOpen", {
+        Default = Library.KeybindFrame.Visible;
+        Text = "Open Keybind Menu";
+        Callback = function(value)
+            Library.KeybindFrame.Visible = value;
+        end;
+    });
+    TabsUISettingsLeft:AddToggle("ShowCustomCursor", {
+        Text = "Custom Cursor";
+        Default = not isMobile;
+        Callback = function(Value)
+            Library.ShowCustomCursor = Value;
+            Window.ShowCustomCursor = Value;
+        end;
+    });
+    TabsUISettingsLeft:AddDropdown("NotificationSide", {
+        Values = {"Left", "Right"};
+        Default = "Right";
+        Text = "Notification Side";
+        Callback = function(Value)
+            Library:SetNotifySide(Value);
+        end;
+    });
+    TabsUISettingsLeft:AddDropdown("DPIDropdown", {
+        Values = {"50%", "75%", "100%", "125%", "150%", "175%", "200%"};
+        Default = "100%";
+        Text = "DPI Scale";
+        Callback = function(Value)
+            Value = Value:gsub("%%", "");
+            local DPI = tonumber(Value);
+            if DPI then
+                Library:SetDPIScale(DPI / 100);
+            end
+        end;
+    });
+    TabsUISettingsLeft:AddDivider()
+    local MenuKeyPicker = TabsUISettingsLeft:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", {Default = "RightShift", NoUI = true, Text = "Menu keybind"});
+    
+    Library.ToggleKeybind = Options.MenuKeybind;
+    Options.MenuKeybind:OnChanged(function(newValue)
+        Library.ToggleKeybind = newValue
+    end)
+    
+    TabsUISettingsLeft:AddButton("Unload Script", function()
+        print("Unload requested. Attempting to restore __namecall if hooked...")
+        -- Attempt to unhook namecall cleanly before unloading
+        if namecallHooked and type(original_namecall) == "function" then
+            local success, err = pcall(setnamecallmethod, original_namecall)
+            if success then
+                print("__namecall restored successfully during unload.")
+            else
+                warn("Failed to restore __namecall during unload:", tostring(err))
+            end
+        elseif namecallHooked then
+             warn("Cannot restore __namecall during unload - stored original is invalid (Type: " .. type(original_namecall) .. ").")
+        end
+        Library:Unload();
+        print("Library unloaded.")
+    end);
+    
+    if ThemeManager and SaveManager then
+         ThemeManager:ApplyToTab(Tabs.UISettings)
+         SaveManager:BuildConfigSection(Tabs.UISettings)
+         SaveManager:SetFolder("Remote Explorer Settings")
+         SaveManager:IgnoreThemeSettings();
+         SaveManager:SetIgnoreIndexes({"MenuKeybind"});
+         SaveManager:LoadAutoloadConfig();
+    
+         Notifications({
+            Title = "Remote Explorer/Spy Loaded",
+            Description = "Press '" .. tostring(Library.ToggleKeybind) .. "' to toggle menu visibility.",
+            Time = 5
+         })
+    else
+        TabsUISettingsRight:AddLabel("Theme/Save Managers not loaded.")
+         Notifications({
+            Title = "Remote Explorer/Spy Loaded",
+            Description = "Press RightShift (default) to toggle menu. Theme/Save managers failed.",
+            Time = 6,
+            Type = "Warning"
+         })
     end
-end)
+    
+    -- Initial Scan on Load (Delayed)
+    task.spawn(function()
+        task.wait(2)
+        local scanButton = FilterGroupbox:FindFirstChild("Scan / Refresh Remotes")
+        if scanButton and scanButton.Func then
+             Notifications({ Title = "Auto-Scan", Description = "Performing initial remote scan...", Time = 2})
+             scanButton.Func()
+        else
+            warn("Could not find Scan button to trigger initial scan.")
+            RemoteListLabel:SetText("Ready. Click 'Scan / Refresh Remotes'.")
+             Notifications({ Title = "Ready", Description = "Click 'Scan / Refresh Remotes' to begin.", Time = 4, Type = "Warning"})
+        end
+    end)
+    
+    -- Ensure namecall is restored if the script errors or is stopped abruptly (best effort)
+    local connection
+    connection = game:GetService("RunService").Stepped:Connect(function()
+        -- A simple check; more robust cleanup might be needed depending on the exploit environment
+        if not Library or not Library.Loaded then
+            if namecallHooked and type(original_namecall) == "function" then
+                 local success, err = pcall(setnamecallmethod, original_namecall)
+                 if success then
+                     warn("Script unloaded/stopped, attempted to restore __namecall successfully.")
+                 else
+                     warn("Script unloaded/stopped, FAILED to restore __namecall:", tostring(err))
+                 end
+            elseif namecallHooked then
+                 warn("Script unloaded/stopped, cannot restore __namecall - stored original is invalid.")
+            end
+            if connection then connection:Disconnect() end
+        end
+    end)
+    
+    print("Remote Explorer & Spy script loaded.")
+    
