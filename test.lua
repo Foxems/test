@@ -80,13 +80,15 @@ local RemoteListLabel = RemoteListGroupbox:AddLabel("Click 'Scan Remotes' to sta
 
 local bgsKeywords = {"blow", "sell", "collect", "upgrade", "buy", "hatch", "equip",
                      "unequip", "teleport", "claim", "rebirth", "craft", "click", "autoclick",
-                     "open", "reward", "interact", "network", "remote", "event"}
+                     "open", "reward", "interact", "network", "remote", "event", "pickup",
+                     "bubble", "potion", "rift", "chest", "key", "quest", "market", "shop",
+                     "redeem", "code", "gift", "wheel", "playtime"} -- Added more BGS specific keywords
 
 local function addRemote(instance)
-    if not (instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction")) then return end
+    if not (instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction")) then return false end
 
     local path = instance:GetFullName()
-    if foundPaths[path] then return end
+    if foundPaths[path] then return false end
 
     foundPaths[path] = true
     table.insert(allRemotes, {
@@ -95,32 +97,83 @@ local function addRemote(instance)
         Path = path,
         Instance = instance
     })
+    return true
 end
 
 local function findRemotesIn(container, containerName)
-    if typeof(container) ~= "Instance" then return end
+    if typeof(container) ~= "Instance" then
+        warn(containerName .. " is not a valid Instance.")
+        return 0 -- Return count of found items
+    end
+
     RemoteListLabel:SetText("Scanning " .. containerName .. "...")
+    local foundCount = 0
+    local processedCount = 0
+
     local success, err = pcall(function()
         for _, instance in ipairs(container:GetDescendants()) do
-            addRemote(instance)
-            task.wait() -- Add a small yield to prevent freezing on huge containers
+            processedCount = processedCount + 1
+            if addRemote(instance) then
+                 foundCount = foundCount + 1
+            end
+            -- Yield occasionally within very large containers, but less often than before
+            if processedCount % 500 == 0 then task.wait() end
         end
     end)
+
     if not success then
         warn("Error scanning " .. containerName .. ":", err)
-        Notifications({ Title = "Scan Warning", Description = "Error scanning " .. containerName .. ". Some remotes might be missed.", Type = "Warning", Time = 5 })
+        Notifications({ Title = "Scan Warning", Description = "Error scanning " .. containerName .. ". Error: " .. tostring(err), Type = "Warning", Time = 7 })
+        RemoteListLabel:SetText("Error scanning " .. containerName .. ". Check console (F9).")
+    else
+        print("Finished scanning " .. containerName .. ", added " .. foundCount .. " new remotes.")
     end
+    return foundCount
 end
 
 local function performScan()
     allRemotes = {}
     foundPaths = {}
+    local totalFound = 0
 
     RemoteListLabel:SetText("Starting scan...")
     task.wait(0.1)
 
+    -- 1. Scan Specific BGS Infinity Paths First
+    RemoteListLabel:SetText("Scanning BGS Framework Remotes...")
+    local repStorage = game:GetService("ReplicatedStorage")
+    local bgsSpecificPaths = {
+        {repStorage:FindFirstChild("Shared"), "ReplicatedStorage.Shared"},
+        {repStorage:FindFirstChild("Remotes"), "ReplicatedStorage.Remotes"}
+    }
+    for _, data in ipairs(bgsSpecificPaths) do
+        local container, containerName = data[1], data[2]
+        if container then
+            local frameworkPath = container:FindFirstChild("Framework")
+            if frameworkPath and containerName == "ReplicatedStorage.Shared" then
+                 local networkPath = frameworkPath:FindFirstChild("Network")
+                 if networkPath then
+                     local remotePath = networkPath:FindFirstChild("Remote")
+                     if remotePath then
+                         totalFound = totalFound + findRemotesIn(remotePath, containerName .. ".Framework.Network.Remote")
+                         task.wait(0.05) -- Small yield after scanning this specific path
+                     else warn("Could not find Remote folder in BGS Framework path.") end
+                 else warn("Could not find Network folder in BGS Framework path.") end
+            elseif containerName == "ReplicatedStorage.Remotes" then
+                 -- Scan the general Remotes folder if it exists
+                 totalFound = totalFound + findRemotesIn(container, containerName)
+                 task.wait(0.05)
+            end
+        else
+            warn("Could not find expected BGS container: " .. containerName)
+        end
+    end
+    task.wait(0.1) -- Yield after specific scans
+
+    -- 2. Scan Common Game Locations
+    RemoteListLabel:SetText("Scanning common locations...")
     local commonLocations = {
-        {game:GetService("ReplicatedStorage"), "ReplicatedStorage"},
+        {game:GetService("ReplicatedStorage"), "ReplicatedStorage (General)"}, -- Scan RS again generally
         {game:GetService("Workspace"), "Workspace"},
         {game:GetService("Players").LocalPlayer and game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui"), "PlayerGui"},
         {game:GetService("Players").LocalPlayer and game:GetService("Players").LocalPlayer:FindFirstChild("PlayerScripts"), "PlayerScripts"},
@@ -129,59 +182,80 @@ local function performScan()
     }
 
     for _, data in ipairs(commonLocations) do
-        findRemotesIn(data[1], data[2])
-        task.wait(0.1)
+        totalFound = totalFound + findRemotesIn(data[1], data[2])
+        task.wait(0.1) -- Yield BETWEEN scanning major containers
     end
 
-    RemoteListLabel:SetText("Performing final deep scan (may take a moment)...")
+    -- 3. Perform Deep Scan (Yielding Occasionally)
+    RemoteListLabel:SetText("Performing deep scan (may take a moment)...")
     task.wait(0.1)
-    local success, err = pcall(function()
+    local deepScanCount = 0
+    local successDeep, errDeep = pcall(function()
         for _, instance in ipairs(game:GetDescendants()) do
-            addRemote(instance)
-            if #allRemotes % 100 == 0 then task.wait() end -- Yield occasionally during deep scan
+            deepScanCount = deepScanCount + 1
+            if addRemote(instance) then
+                totalFound = totalFound + 1
+            end
+            if deepScanCount % 500 == 0 then -- Yield every 500 instances checked in deep scan
+                RemoteListLabel:SetText("Deep scan progress: " .. deepScanCount .. " instances checked...")
+                task.wait()
+            end
         end
     end)
-     if not success then
-        warn("Error during deep scan:", err)
-        Notifications({ Title = "Scan Warning", Description = "Error during deep scan. Some remotes might be missed.", Type = "Warning", Time = 5 })
+     if not successDeep then
+        warn("Error during deep scan:", errDeep)
+        Notifications({ Title = "Scan Warning", Description = "Error during deep scan: " .. tostring(errDeep), Type = "Warning", Time = 7 })
     end
+    RemoteListLabel:SetText("Deep scan finished checking " .. deepScanCount .. " instances.")
+    task.wait(0.1) -- Yield after deep scan
 
+    -- 4. Keyword Scan (Yielding Occasionally) - Less critical if specific paths worked
     RemoteListLabel:SetText("Searching by keywords...")
     task.wait(0.1)
+    local keywordScanCount = 0
     local successKeywords, errKeywords = pcall(function()
         for _, instance in ipairs(game:GetDescendants()) do
+             keywordScanCount = keywordScanCount + 1
              if (instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction")) then
                  local name = instance.Name:lower()
                  for _, keyword in ipairs(bgsKeywords) do
                      if name:match(keyword) then
-                         addRemote(instance)
-                         break
+                         if addRemote(instance) then -- Use addRemote to avoid duplicates
+                            totalFound = totalFound + 1
+                         end
+                         break -- Move to next instance once a keyword matches
                      end
                  end
              end
-             if #allRemotes % 100 == 0 then task.wait() end -- Yield occasionally
+             if keywordScanCount % 500 == 0 then -- Yield every 500 instances checked
+                 RemoteListLabel:SetText("Keyword scan progress: " .. keywordScanCount .. " instances checked...")
+                 task.wait()
+             end
         end
     end)
     if not successKeywords then
         warn("Error during keyword scan:", errKeywords)
-        Notifications({ Title = "Scan Warning", Description = "Error during keyword scan. Some remotes might be missed.", Type = "Warning", Time = 5 })
+        Notifications({ Title = "Scan Warning", Description = "Error during keyword scan: " .. tostring(errKeywords), Type = "Warning", Time = 7 })
     end
+    RemoteListLabel:SetText("Keyword scan finished checking " .. keywordScanCount .. " instances.")
+    task.wait(0.1) -- Yield after keyword scan
 
-
+    -- 5. Sort and Finalize
     table.sort(allRemotes, function(a, b)
         return a.Path < b.Path
     end)
 
+    RemoteListLabel:SetText("Scan complete. Found " .. #allRemotes .. " unique remotes.")
     return true
 end
 
 FilterGroupbox:AddButton({
     Text = "Scan / Refresh Remotes",
-    Tooltip = "Scans the game for RemoteEvents and RemoteFunctions.",
+    Tooltip = "Scans the game for RemoteEvents and RemoteFunctions, prioritizing BGS paths.",
     Func = function()
         RemoteListLabel:SetText("Initiating scan...")
 
-        task.spawn(function()
+        task.spawn(function() -- Run scan in a separate thread
             local scanSuccess, scanError = pcall(performScan)
 
             if not scanSuccess then
@@ -195,7 +269,7 @@ FilterGroupbox:AddButton({
                 return
             end
 
-            applyFilters()
+            applyFilters() -- Apply filters *after* scan completes
 
             Notifications({
                 Title = "Scan Complete",
@@ -243,10 +317,10 @@ RemoteListGroupbox:AddButton({
 function formatRemotesForCopy(remotesList)
     if #remotesList == 0 then return "" end
 
-    local text = "Found " .. #remotesList .. " Remotes:\n"
+    local text = "Found " .. #remotesList .. " Remotes:\n\n"
 
-    for _, remote in ipairs(remotesList) do
-        text = text .. remote.Type .. ": " .. remote.Name .. " (" .. remote.Path .. ")\n"
+    for i, remote in ipairs(remotesList) do
+        text = text .. i .. ". [" .. remote.Type .. "] " .. remote.Name .. "\n   Path: " .. remote.Path .. "\n"
     end
 
     return text
@@ -264,30 +338,42 @@ function applyFilters()
     for _, remote in ipairs(allRemotes) do
         local include = true
 
+        -- Type Filter
         if (remote.Type == "RemoteEvent" and not showEvents) or
            (remote.Type == "RemoteFunction" and not showFunctions) then
             include = false
         end
 
-        if searchText ~= "" and not (remote.Name:lower():find(searchText) or remote.Path:lower():find(searchText)) then
+        -- Search Filter
+        if include and searchText ~= "" and not (remote.Name:lower():find(searchText) or remote.Path:lower():find(searchText)) then
             include = false
         end
 
-        if excludeRoblox and (remote.Path:match("^Instance%.RobloxReplicatedStorage") or
-                             remote.Path:match("^Instance%.RobloxGui") or
-                             remote.Path:match("^Instance%.CoreGui") or
-                             remote.Path:match("^CoreGui") or -- Added just in case
-                             remote.Path:match("^RobloxGui") ) then -- Added just in case
-            include = false
+        -- Exclude Roblox Filter (Improved path matching)
+        if include and excludeRoblox then
+            local pathLower = remote.Path:lower()
+            if pathLower:match("^instance%.robloxreplicatedstorage") or
+               pathLower:match("^instance%.robloxgui") or
+               pathLower:match("^instance%.coregui") or
+               pathLower:match("^coregui") or
+               pathLower:match("^robloxgui") or
+               pathLower:match("^players%.player%.playergui%.robloxgui") then -- More specific CoreGui path
+                include = false
+            end
         end
 
-        if onlyGame and (remote.Path:match("^Instance%.RobloxReplicatedStorage") or
-                        remote.Path:match("^Instance%.CoreGui") or
-                        remote.Path:match("^Instance%.CoreScripts") or
-                        remote.Path:match("^CoreGui") or
-                        remote.Path:match("^RobloxGui") or
-                        remote.Path:match("^CoreScripts")) then -- Added just in case
-            include = false
+        -- Only Game Filter (Improved path matching)
+        if include and onlyGame then
+             local pathLower = remote.Path:lower()
+             if pathLower:match("^instance%.robloxreplicatedstorage") or
+                pathLower:match("^instance%.coregui") or
+                pathLower:match("^instance%.corescripts") or
+                pathLower:match("^coregui") or
+                pathLower:match("^robloxgui") or
+                pathLower:match("^corescripts") or
+                pathLower:match("^players%.player%.playergui%.robloxgui") then
+                 include = false
+             end
         end
 
         if include then
@@ -313,8 +399,8 @@ function updateRemoteList()
         for i, remote in ipairs(filteredRemotes) do
              -- Add numbering and slightly better formatting
             listText = listText .. i .. ". [" .. remote.Type:sub(1, 6) .. "] " .. remote.Name .. "\n   Path: " .. remote.Path .. "\n"
-            if i > 200 then -- Limit displayed remotes to prevent lag with huge lists
-                 listText = listText .. "\n... (list truncated for performance) ..."
+            if i > 250 then -- Limit displayed remotes slightly higher
+                 listText = listText .. "\n... (" .. (#filteredRemotes - i) .. " more - list truncated for performance) ..."
                  break
             end
         end
@@ -323,6 +409,7 @@ function updateRemoteList()
     RemoteListLabel:SetText(listText)
 end
 
+-- === UI Settings Tab Content (Mostly unchanged) ===
 local successTM, ThemeManager = pcall(function()
     return loadstring(game:HttpGet(Repository .. "addons/ThemeManager.lua"))()
 end)
@@ -348,7 +435,7 @@ TabsUISettingsLeft:AddToggle("ShowCustomCursor", {
     Default = not isMobile;
     Callback = function(Value)
         Library.ShowCustomCursor = Value;
-        Window.ShowCustomCursor = Value;
+        Window.ShowCustomCursor = Value; -- Ensure window cursor state matches library
     end;
 });
 TabsUISettingsLeft:AddDropdown("NotificationSide", {
@@ -364,16 +451,17 @@ TabsUISettingsLeft:AddDropdown("DPIDropdown", {
     Default = "100%";
     Text = "DPI Scale";
     Callback = function(Value)
-        Value = Value:gsub("%%", "");
+        Value = Value:gsub("%%", ""); -- Remove percentage sign
         local DPI = tonumber(Value);
         if DPI then
-            Library:SetDPIScale(DPI / 100);
+            Library:SetDPIScale(DPI / 100); -- Library expects scale (e.g., 1.0, 1.5)
         end
     end;
 });
 TabsUISettingsLeft:AddDivider()
 local MenuKeyPicker = TabsUISettingsLeft:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", {Default = "RightShift", NoUI = true, Text = "Menu keybind"});
 
+-- Ensure the library's toggle keybind is linked to the option
 Library.ToggleKeybind = Options.MenuKeybind;
 Options.MenuKeybind:OnChanged(function(newValue)
     Library.ToggleKeybind = newValue
@@ -383,13 +471,14 @@ TabsUISettingsLeft:AddButton("Unload Script", function()
     Library:Unload();
 end);
 
+-- Appearance & Saving Groupbox (Right side)
 if ThemeManager and SaveManager then
      ThemeManager:ApplyToTab(Tabs.UISettings)
      SaveManager:BuildConfigSection(Tabs.UISettings)
-     SaveManager:SetFolder("Remote Explorer Settings")
-     SaveManager:IgnoreThemeSettings();
-     SaveManager:SetIgnoreIndexes({"MenuKeybind"});
-     SaveManager:LoadAutoloadConfig();
+     SaveManager:SetFolder("Remote Explorer Settings") -- Use a specific folder name
+     SaveManager:IgnoreThemeSettings(); -- Don't save theme settings with config
+     SaveManager:SetIgnoreIndexes({"MenuKeybind"}); -- Don't save the keybind itself, just its value
+     SaveManager:LoadAutoloadConfig(); -- Load saved settings
 
      Notifications({
         Title = "Remote Explorer Loaded",
@@ -398,19 +487,24 @@ if ThemeManager and SaveManager then
      })
 else
     TabsUISettingsRight:AddLabel("Theme/Save Managers not loaded.")
+    Notifications({
+        Title = "Remote Explorer Loaded",
+        Description = "Press RightShift (default) to toggle menu. Theme/Save managers failed.",
+        Time = 6,
+        Type = "Warning"
+     })
 end
 
+-- Initial Scan on Load (Delayed)
 task.spawn(function()
-    task.wait(2)
-    local scanButton = FilterGroupbox:FindFirstChildWhichIsA("Button", true)
-    while not scanButton or scanButton.Text ~= "Scan / Refresh Remotes" do
-        task.wait(0.5)
-        scanButton = FilterGroupbox:FindFirstChildWhichIsA("Button", true)
-    end
+    task.wait(2) -- Wait a couple of seconds for game assets to load
+    local scanButton = FilterGroupbox:FindFirstChild("Scan / Refresh Remotes") -- Find button by name
     if scanButton and scanButton.Func then
-         scanButton.Func()
+         Notifications({ Title = "Auto-Scan", Description = "Performing initial remote scan...", Time = 2})
+         scanButton.Func() -- Call the button's function
     else
         warn("Could not find Scan button to trigger initial scan.")
         RemoteListLabel:SetText("Ready. Click 'Scan / Refresh Remotes'.")
+         Notifications({ Title = "Ready", Description = "Click 'Scan / Refresh Remotes' to begin.", Time = 4, Type = "Warning"})
     end
 end)
