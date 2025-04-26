@@ -15,6 +15,9 @@ getgenv().Functions = {
     AutoSell = false;
     AutoCollect = false;
     
+    -- Misc Features
+    AutoMysteryBox = false;
+    
     -- Settings
     Disable3DRendering = false;
     BlackOutScreen = false;
@@ -37,6 +40,14 @@ local function CollectPickups()
     end;
 end;
 
+local function ClaimAllGifts()
+    for i, v in next, game:GetService("Workspace").Rendered.Gifts:GetChildren() do
+        game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Framework"):WaitForChild("Network"):WaitForChild("Remote"):WaitForChild("Event"):FireServer("ClaimGift", v.Name);
+        task.wait();
+        v:Destroy();
+    end;
+end;
+
 --[[ Load Obsidian Library ]]--
 local Repository = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/";
 local Library = loadstring(game:HttpGet(Repository .. "Library.lua"))();
@@ -56,6 +67,7 @@ local Window = Library:CreateWindow({
 --[[ Create Tabs ]]--
 local Tabs = {
     Main = Window:AddTab("Main", "user"),
+    Misc = Window:AddTab("Misc", "list"),
     Teleports = Window:AddTab("Teleports", "globe"),
     CPUSettings = Window:AddTab("CPU Settings", "cpu"),
     ["UI Settings"] = Window:AddTab("UI Settings", "settings"),
@@ -120,6 +132,7 @@ local UntoggleAll = TabsUntoggle:AddButton({
         Toggles.AutoBubble:SetValue(false);
         Toggles.AutoSell:SetValue(false);
         Toggles.AutoCollect:SetValue(false);
+        Toggles.AutoMysteryBox:SetValue(false);
         Toggles.Disable3DRendering:SetValue(false);
         Toggles.BlackOutScreen:SetValue(false);
     end;
@@ -132,13 +145,123 @@ local TabsOtherFunctions = Tabs.Main:AddRightGroupbox("Other Functions");
 TabsOtherFunctions:AddButton({
     Text = "Redeem All Codes";
     Func = function()
-        local Codes = {"easter", "RELEASE", "Lucky", "Thanks"};
-        for i, v in next, Codes do
-            game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Framework"):WaitForChild("Network"):WaitForChild("Remote"):WaitForChild("Function"):InvokeServer("RedeemCode", v);
-        end;
+        -- Try to find code module first
+        local codeModule = nil
+        local success, result = pcall(function()
+            -- Look in common locations for code storage
+            return ReplicatedStorage:FindFirstChild("Shared"):FindFirstChild("Framework"):FindFirstChild("Modules"):FindFirstChild("Codes")
+        end)
+        
+        local codesToTry = {}
+        
+        -- If we found a module, try to get codes from it
+        if success and result then
+            codeModule = require(result)
+            if type(codeModule) == "table" then
+                for code, _ in pairs(codeModule) do
+                    table.insert(codesToTry, code)
+                end
+            end
+        end
+        
+        -- If we couldn't find codes in modules, use common codes
+        if #codesToTry == 0 then
+            codesToTry = {"throwback", "easter", "RELEASE", "Lucky", "Thanks", "Update1", "Valentines", 
+                          "Summer", "500M", "Halloween", "xmas", "Million", "Update", "Launch", "Free",
+                          "Winter", "Holiday", "Spring", "Egg", "Code", "Twitter"}
+        end
+        
+        -- Try each code
+        local redeemedCount = 0
+        for _, code in ipairs(codesToTry) do
+            local success = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+                :WaitForChild("Framework"):WaitForChild("Network"):WaitForChild("Remote")
+                :WaitForChild("Function"):InvokeServer("RedeemCode", code)
+            
+            if success then
+                redeemedCount = redeemedCount + 1
+                print("Redeemed code:", code)
+            end
+            task.wait(0.5)
+        end
+        
         Library:Notify({
-            Title = "Codes Redeemed";
-            Description = "All available codes have been redeemed.";
+            Title = "Codes Redeemed",
+            Description = redeemedCount .. " codes have been successfully redeemed.",
+            Time = 3
+        })
+    end
+});
+
+--[[ Misc Tab ]]--
+local TabsMiscFunctions = Tabs.Misc:AddLeftGroupbox("Misc Functions");
+
+TabsMiscFunctions:AddToggle("AutoMysteryBox", {
+    Text = "Auto Open Mystery Boxes";
+    Default = false;
+    Callback = function(Value)
+        getgenv().Functions.AutoMysteryBox = Value;
+        task.spawn(function()
+            while Functions.AutoMysteryBox do
+                -- Open 10 mystery boxes at once
+                for i = 1, 10 do
+                    local args = {
+                        [1] = "UseGift",
+                        [2] = "Mystery Box",
+                        [3] = 1
+                    }
+                    game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+                    task.wait(0.1);
+                end
+                
+                -- Wait a moment for the gifts to spawn
+                task.wait(1);
+                
+                -- Claim all the gifts that spawned
+                ClaimAllGifts();
+                
+                -- Wait before the next batch
+                task.wait(2);
+            end;
+        end);
+    end;
+});
+
+TabsMiscFunctions:AddButton({
+    Text = "Open 10 Mystery Boxes";
+    Func = function()
+        -- Open 10 mystery boxes
+        for i = 1, 10 do
+            local args = {
+                [1] = "UseGift",
+                [2] = "Mystery Box",
+                [3] = 1
+            }
+            game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+            task.wait(0.1);
+        end
+        
+        -- Wait a moment for the gifts to spawn
+        task.wait(1);
+        
+        -- Claim all the gifts that spawned
+        ClaimAllGifts();
+        
+        Library:Notify({
+            Title = "Mystery Boxes";
+            Description = "10 Mystery Boxes have been opened and claimed.";
+            Time = 3;
+        });
+    end;
+});
+
+TabsMiscFunctions:AddButton({
+    Text = "Claim All Gifts";
+    Func = function()
+        ClaimAllGifts();
+        Library:Notify({
+            Title = "Gifts Claimed";
+            Description = "All available gifts have been claimed.";
             Time = 3;
         });
     end;
