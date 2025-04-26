@@ -1,273 +1,182 @@
--- [[ Existing Code Start ]] --
-local Repository = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
-
-local success, Library = pcall(function()
-    return loadstring(game:HttpGet(Repository .. "Library.lua"))()
-end)
-
-if not success or type(Library) ~= 'table' then
-    warn("Failed to load Obsidian Library! Check the Repository URL or your internet connection.")
-    warn("Error:", Library)
-    return
-end
-
-local Options = Library.Options
-local Toggles = Library.Toggles
-local Notifications = Library.Notify
-
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
+--[[ Service Variables ]]--
 local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService") -- Needed for keybind later
 
-local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled and not UserInputService.MouseEnabled
+--[[ GUI Configuration ]]--
+local guiVisible = true
+local toggleKeybind = Enum.KeyCode.RightControl -- Example keybind (Right Ctrl)
 
-local Window = Library:CreateWindow({
-    Title = "Auto Farm",
-    Footer = "GUI by s.eths / Obsidian",
-    NotifySide = "Right",
-    ShowCustomCursor = not isMobile,
-})
+--[[ Main GUI Creation ]]--
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ObsidianStyleGui"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Enabled = guiVisible
 
-local Tabs = {
-    AutoFarm = Window:AddTab("Auto Farm", "play"),
-    UISettings = Window:AddTab("UI Settings", "settings"),
-}
+-- Main Draggable Frame
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 550, 0, 350) -- Increased size for tabs
+mainFrame.Position = UDim2.new(0.5, -275, 0.5, -175) -- Center the frame
+mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+mainFrame.BorderColor3 = Color3.fromRGB(60, 60, 70)
+mainFrame.BorderSizePixel = 1
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Selectable = true
+mainFrame.Parent = screenGui
 
--- === Auto Farm Tab Content ===
-local AutoFarmGroupbox = Tabs.AutoFarm:AddLeftGroupbox("Farming Options")
+local mainFrameCorner = Instance.new("UICorner")
+mainFrameCorner.CornerRadius = UDim.new(0, 8)
+mainFrameCorner.Parent = mainFrame
 
-local autoCollectActive = false
-local autoBubbleActive = false
-local autoSellActive = false
+-- Left Sidebar for Tabs
+local tabSidebar = Instance.new("Frame")
+tabSidebar.Name = "TabSidebar"
+tabSidebar.Size = UDim2.new(0, 60, 1, 0) -- Width 60, full height
+tabSidebar.BackgroundColor3 = Color3.fromRGB(35, 35, 40) -- Slightly lighter bg
+tabSidebar.BorderSizePixel = 0
+tabSidebar.Parent = mainFrame
 
-local collectRemote = ReplicatedStorage:FindFirstChild("Remotes", true) and ReplicatedStorage.Remotes:FindFirstChild("Pickups", true) and ReplicatedStorage.Remotes.Pickups:FindFirstChild("CollectPickup", true)
-local frameworkEvent = ReplicatedStorage:FindFirstChild("Shared", true) and ReplicatedStorage.Shared:FindFirstChild("Framework", true) and ReplicatedStorage.Shared.Framework:FindFirstChild("Network", true) and ReplicatedStorage.Shared.Framework.Network:FindFirstChild("Remote", true) and ReplicatedStorage.Shared.Framework.Network.Remote:FindFirstChild("Event", true)
+local tabSidebarCorner = Instance.new("UICorner") -- Round only top-left and bottom-left
+tabSidebarCorner.CornerRadius = UDim.new(0, 8)
+tabSidebarCorner.Parent = tabSidebar
 
-if not collectRemote or not collectRemote:IsA("RemoteEvent") then
-    AutoFarmGroupbox:AddLabel("Error: Collect Remote not found!")
-    warn("Could not find ReplicatedStorage.Remotes.Pickups.CollectPickup")
+-- Right Content Area Frame
+local contentArea = Instance.new("Frame")
+contentArea.Name = "ContentArea"
+contentArea.Size = UDim2.new(1, -60, 1, 0) -- Fill remaining space
+contentArea.Position = UDim2.new(0, 60, 0, 0) -- Position next to sidebar
+contentArea.BackgroundColor3 = Color3.fromRGB(25, 25, 30) -- Match main background
+contentArea.BorderSizePixel = 0
+contentArea.ClipsDescendants = true -- Hide overflowing content
+contentArea.Parent = mainFrame
+
+local contentAreaCorner = Instance.new("UICorner") -- Round only top-right and bottom-right
+contentAreaCorner.CornerRadius = UDim.new(0, 8)
+contentAreaCorner.Parent = contentArea
+
+-- Tab Management
+local tabs = {}
+local tabButtons = {}
+local currentTab = nil
+
+local function switchTab(tabName)
+	if currentTab == tabName then return end -- Don't switch if already on this tab
+
+	for name, frame in pairs(tabs) do
+		frame.Visible = (name == tabName)
+	end
+
+	for name, button in pairs(tabButtons) do
+		-- Adjust visual style for active/inactive tabs (e.g., background color)
+		if name == tabName then
+			button.BackgroundColor3 = Color3.fromRGB(50, 50, 60) -- Active color
+		else
+			button.BackgroundColor3 = Color3.fromRGB(35, 35, 40) -- Inactive color (matches sidebar)
+		end
+	end
+	currentTab = tabName
 end
 
-if not frameworkEvent or not frameworkEvent:IsA("RemoteEvent") then
-    AutoFarmGroupbox:AddLabel("Error: Framework Event not found!")
-    warn("Could not find ReplicatedStorage.Shared.Framework.Network.Remote.Event")
+--[[ Settings Tab ]]--
+local settingsTabName = "Settings"
+
+-- Settings Tab Button (Using ImageButton for Icon)
+local settingsButton = Instance.new("ImageButton")
+settingsButton.Name = settingsTabName .. "Button"
+settingsButton.Size = UDim2.new(1, 0, 0, 50) -- Full width of sidebar, height 50
+settingsButton.Position = UDim2.new(0, 0, 0, 10) -- Position with some padding
+settingsButton.BackgroundColor3 = Color3.fromRGB(35, 35, 40) -- Matches sidebar initially
+settingsButton.BorderSizePixel = 0
+settingsButton.Image = "rbxassetid://6027139094" -- Placeholder Gear Icon ID (FIND A REAL ONE)
+settingsButton.ImageColor3 = Color3.fromRGB(180, 180, 185)
+settingsButton.ScaleType = Enum.ScaleType.Fit -- Fit the icon within the button
+settingsButton.Parent = tabSidebar
+tabButtons[settingsTabName] = settingsButton
+
+local settingsButtonCorner = Instance.new("UICorner")
+settingsButtonCorner.CornerRadius = UDim.new(0, 6)
+settingsButtonCorner.Parent = settingsButton
+
+-- Settings Content Frame
+local settingsFrame = Instance.new("Frame")
+settingsFrame.Name = settingsTabName .. "Frame"
+settingsFrame.Size = UDim2.new(1, 0, 1, 0) -- Fill content area
+settingsFrame.BackgroundTransparency = 1 -- Transparent background
+settingsFrame.BorderSizePixel = 0
+settingsFrame.Visible = false -- Initially hidden
+settingsFrame.Parent = contentArea
+tabs[settingsTabName] = settingsFrame
+
+-- Settings: Keybind Label
+local keybindLabel = Instance.new("TextLabel")
+keybindLabel.Name = "KeybindLabel"
+keybindLabel.Size = UDim2.new(1, -20, 0, 30)
+keybindLabel.Position = UDim2.new(0, 10, 0, 10)
+keybindLabel.BackgroundTransparency = 1
+keybindLabel.Font = Enum.Font.SourceSans
+keybindLabel.TextColor3 = Color3.fromRGB(210, 210, 215)
+keybindLabel.TextSize = 16
+keybindLabel.Text = "Zobrazit/Skrýt GUI: " .. toggleKeybind.Name -- Display current keybind
+keybindLabel.TextXAlignment = Enum.TextXAlignment.Left
+keybindLabel.Parent = settingsFrame
+
+-- Settings: Unload Button
+local unloadButton = Instance.new("TextButton")
+unloadButton.Name = "UnloadButton"
+unloadButton.Size = UDim2.new(0, 150, 0, 35)
+unloadButton.Position = UDim2.new(0, 10, 0, 50) -- Position below keybind label
+unloadButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40) -- Reddish color for unload/danger
+unloadButton.BorderColor3 = Color3.fromRGB(210, 70, 70)
+unloadButton.BorderSizePixel = 1
+unloadButton.Font = Enum.Font.SourceSansSemibold
+unloadButton.TextColor3 = Color3.fromRGB(230, 230, 230)
+unloadButton.TextSize = 16
+unloadButton.Text = "Unload Script"
+unloadButton.Parent = settingsFrame
+
+local unloadButtonCorner = Instance.new("UICorner")
+unloadButtonCorner.CornerRadius = UDim.new(0, 5)
+unloadButtonCorner.Parent = unloadButton
+
+--[[ Event Connections ]]--
+
+-- Tab Switching
+settingsButton.MouseButton1Click:Connect(function()
+	switchTab(settingsTabName)
+end)
+
+-- Unload Button Action
+unloadButton.MouseButton1Click:Connect(function()
+	print("Unloading GUI...")
+	screenGui:Destroy()
+	-- Add any other cleanup logic needed for your script here
+end)
+
+-- GUI Toggle Keybind Listener
+local function onInputBegan(input, gameProcessedEvent)
+	if gameProcessedEvent then return end -- Don't process if chat or other Roblox UI handled it
+
+	if input.KeyCode == toggleKeybind then
+		guiVisible = not guiVisible
+		screenGui.Enabled = guiVisible
+		print("GUI Visibility Toggled:", guiVisible)
+	end
 end
-
-AutoFarmGroupbox:AddToggle("AutoCollectCoins", {
-    Text = "Auto Collect Coins/Orbs",
-    Default = false,
-    Callback = function(value)
-        autoCollectActive = value
-        if value and not collectRemote then
-             Notifications({ Title = "Error", Description = "Cannot start Auto Collect: Remote not found.", Type = "Error", Time = 5 })
-             Toggles.AutoCollectCoins:SetValue(false)
-             autoCollectActive = false
-        elseif value then
-             Notifications({ Title = "Auto Collect", Description = "Started collecting coins/orbs.", Type = "Info", Time = 3 })
-        else
-             Notifications({ Title = "Auto Collect", Description = "Stopped collecting coins/orbs.", Type = "Info", Time = 3 })
-        end
-    end
-})
-
-AutoFarmGroupbox:AddToggle("AutoBlowBubble", {
-    Text = "Auto Blow Bubble",
-    Default = false,
-    Callback = function(value)
-        autoBubbleActive = value
-         if value and not frameworkEvent then
-             Notifications({ Title = "Error", Description = "Cannot start Auto Bubble: Remote not found.", Type = "Error", Time = 5 })
-             Toggles.AutoBlowBubble:SetValue(false)
-             autoBubbleActive = false
-        elseif value then
-             Notifications({ Title = "Auto Bubble", Description = "Started blowing bubbles.", Type = "Info", Time = 3 })
-        else
-             Notifications({ Title = "Auto Bubble", Description = "Stopped blowing bubbles.", Type = "Info", Time = 3 })
-        end
-    end
-})
-
-AutoFarmGroupbox:AddToggle("AutoSellBubble", {
-    Text = "Auto Sell Bubble",
-    Default = false,
-    Callback = function(value)
-        autoSellActive = value
-         if value and not frameworkEvent then
-             Notifications({ Title = "Error", Description = "Cannot start Auto Sell: Remote not found.", Type = "Error", Time = 5 })
-             Toggles.AutoSellBubble:SetValue(false)
-             autoSellActive = false
-        elseif value then
-             Notifications({ Title = "Auto Sell", Description = "Started selling bubbles.", Type = "Info", Time = 3 })
-        else
-             Notifications({ Title = "Auto Sell", Description = "Stopped selling bubbles.", Type = "Info", Time = 3 })
-        end
-    end
-})
-
--- Auto Collect Loop
-task.spawn(function()
-    while task.wait(0.75) do -- Check slightly less frequently for pickups
-        if autoCollectActive and collectRemote then
-            local pickupsFolder = Workspace:FindFirstChild("Pickups")
-            if pickupsFolder then
-                for _, item in ipairs(pickupsFolder:GetChildren()) do
-                    -- Assuming the GUID is the Name of the item instance within Workspace.Pickups
-                    local guid = item.Name
-                    if typeof(guid) == "string" and guid ~= "" then
-                         local success, err = pcall(function()
-                             collectRemote:FireServer(guid)
-                         end)
-                         if not success then
-                             warn("Error firing CollectPickup for", guid, ":", err)
-                             -- Optional: Stop auto-collect on error?
-                             -- autoCollectActive = false
-                             -- Toggles.AutoCollectCoins:SetValue(false)
-                             -- Notifications({ Title = "Collect Error", Description = "Error: "..tostring(err), Type = "Error", Time = 4 })
-                         end
-                         task.wait(0.05) -- Small delay between firing for multiple items
-                    end
-                end
-            else
-                warn("Could not find Workspace.Pickups folder for Auto Collect.")
-                -- Optional: Stop if the folder isn't found
-                -- autoCollectActive = false
-                -- Toggles.AutoCollectCoins:SetValue(false)
-                -- Notifications({ Title = "Collect Error", Description = "Workspace.Pickups not found.", Type = "Error", Time = 4 })
-            end
-        end
-    end
-end)
-
--- Auto Bubble Loop
-task.spawn(function()
-    while task.wait(0.15) do -- Adjust wait time as needed
-        if autoBubbleActive and frameworkEvent then
-             local success, err = pcall(function()
-                 frameworkEvent:FireServer("BlowBubble")
-             end)
-             if not success then
-                 warn("Error firing BlowBubble:", err)
-             end
-        end
-    end
-end)
-
--- Auto Sell Loop
-task.spawn(function()
-    while task.wait(1) do -- Sell less frequently
-        if autoSellActive and frameworkEvent then
-             local success, err = pcall(function()
-                 frameworkEvent:FireServer("SellBubble")
-             end)
-             if not success then
-                 warn("Error firing SellBubble:", err)
-             end
-        end
-    end
-end)
+UserInputService.InputBegan:Connect(onInputBegan)
 
 
--- === UI Settings Tab Content ===
-local successTM, ThemeManager = pcall(function()
-    return loadstring(game:HttpGet(Repository .. "addons/ThemeManager.lua"))()
-end)
-local successSM, SaveManager = pcall(function()
-    return loadstring(game:HttpGet(Repository .. "addons/SaveManager.lua"))()
-end)
+--[[ Initialization ]]--
 
-if not successTM then warn("Failed to load ThemeManager:", ThemeManager) end
-if not successSM then warn("Failed to load SaveManager:", SaveManager) end
+-- Set Parent to PlayerGui
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+screenGui.Parent = playerGui
 
-local TabsUISettingsLeft = Tabs.UISettings:AddLeftGroupbox("Menu")
-local TabsUISettingsRight = Tabs.UISettings:AddRightGroupbox("Appearance & Saving")
+-- Switch to the default tab (Settings)
+switchTab(settingsTabName)
 
-TabsUISettingsLeft:AddToggle("KeybindMenuOpen", {
-    Default = Library.KeybindFrame.Visible;
-    Text = "Open Keybind Menu";
-    Callback = function(value)
-        Library.KeybindFrame.Visible = value;
-    end;
-});
-TabsUISettingsLeft:AddToggle("ShowCustomCursor", {
-    Text = "Custom Cursor";
-    Default = not isMobile;
-    Callback = function(Value)
-        Library.ShowCustomCursor = Value;
-        Window.ShowCustomCursor = Value;
-    end;
-});
-TabsUISettingsLeft:AddDropdown("NotificationSide", {
-    Values = {"Left", "Right"};
-    Default = "Right";
-    Text = "Notification Side";
-    Callback = function(Value)
-        Library:SetNotifySide(Value);
-    end;
-});
-TabsUISettingsLeft:AddDropdown("DPIDropdown", {
-    Values = {"50%", "75%", "100%", "125%", "150%", "175%", "200%"};
-    Default = "100%";
-    Text = "DPI Scale";
-    Callback = function(Value)
-        Value = Value:gsub("%%", "");
-        local DPI = tonumber(Value);
-        if DPI then
-            Library:SetDPIScale(DPI / 100);
-        end
-    end;
-});
-TabsUISettingsLeft:AddDivider()
-local MenuKeyPicker = TabsUISettingsLeft:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", {Default = "RightShift", NoUI = true, Text = "Menu keybind"});
-
-Library.ToggleKeybind = Options.MenuKeybind;
-Options.MenuKeybind:OnChanged(function(newValue)
-    Library.ToggleKeybind = newValue
-end)
-
-TabsUISettingsLeft:AddButton("Unload Script", function()
-    print("Unload requested.")
-    -- Set toggles to false visually and functionally before unloading
-    if Toggles.AutoCollectCoins then Toggles.AutoCollectCoins:SetValue(false) end
-    if Toggles.AutoBlowBubble then Toggles.AutoBlowBubble:SetValue(false) end
-    if Toggles.AutoSellBubble then Toggles.AutoSellBubble:SetValue(false) end
-    autoCollectActive = false
-    autoBubbleActive = false
-    autoSellActive = false
-    task.wait(0.1) -- Give loops a moment to stop
-    Library:Unload();
-    print("Library unloaded.")
-end);
-
-if ThemeManager and SaveManager then
-     ThemeManager:ApplyToTab(Tabs.UISettings)
-     SaveManager:BuildConfigSection(Tabs.UISettings)
-     SaveManager:SetFolder("AutoFarm Settings") -- Changed folder name
-     SaveManager:IgnoreThemeSettings();
-     SaveManager:SetIgnoreIndexes({"MenuKeybind"}); -- Keep ignoring keybind
-     -- Add farm toggles to save config if desired
-     SaveManager:AddSaveableElements({
-         Options.AutoCollectCoins,
-         Options.AutoBlowBubble,
-         Options.AutoSellBubble
-     })
-     SaveManager:LoadAutoloadConfig();
-
-     Notifications({
-        Title = "Auto Farm Loaded",
-        Description = "Press '" .. tostring(Library.ToggleKeybind) .. "' to toggle menu visibility.",
-        Time = 5
-     })
-else
-    TabsUISettingsRight:AddLabel("Theme/Save Managers not loaded.")
-     Notifications({
-        Title = "Auto Farm Loaded",
-        Description = "Press RightShift (default) to toggle menu. Theme/Save managers failed.",
-        Time = 6,
-        Type = "Warning"
-     })
-end
-
-print("Auto Farm script loaded.")
+print("Obsidian-Style GUI with Settings Tab Loaded")
+-- Add a placeholder print for the keybind instruction
+print("Press RightControl to toggle GUI visibility.") -- Inform user about the default key
