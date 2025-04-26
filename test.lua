@@ -14,9 +14,15 @@ getgenv().Functions = {
     AutoBubble = false;
     AutoSell = false;
     AutoCollect = false;
+    AutoClaimPlaytime = false;
     
     -- Misc Features
     AutoMysteryBox = false;
+    
+    -- Egg Features
+    AutoHatch = false;
+    SelectedEgg = "Common Egg";
+    HatchAmount = 1;
     
     -- Settings
     Disable3DRendering = false;
@@ -48,6 +54,41 @@ local function ClaimAllGifts()
     end;
 end;
 
+local function CraftMaxPotion(potionType)
+    -- Craft potions from tier 1 to tier 5
+    for tier = 1, 5 do
+        local args = {
+            [1] = "CraftPotion",
+            [2] = potionType,
+            [3] = tier,
+            [4] = false
+        }
+        game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+        task.wait(0.5); -- Wait a bit between crafting
+    end
+    
+    Library:Notify({
+        Title = "Potion Crafted",
+        Description = "Max level " .. potionType .. " potion has been crafted.",
+        Time = 3
+    });
+end;
+
+local function ClaimAllPlaytimeRewards()
+    local claimedCount = 0;
+    
+    -- Try to claim all 9 playtime rewards
+    for i = 1, 9 do
+        local success = game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Function:InvokeServer("ClaimPlaytime", i);
+        if success then
+            claimedCount = claimedCount + 1;
+        end
+        task.wait(0.1);
+    end
+    
+    return claimedCount;
+end;
+
 --[[ Load Obsidian Library ]]--
 local Repository = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/";
 local Library = loadstring(game:HttpGet(Repository .. "Library.lua"))();
@@ -67,6 +108,8 @@ local Window = Library:CreateWindow({
 --[[ Create Tabs ]]--
 local Tabs = {
     Main = Window:AddTab("Main", "user"),
+    Eggs = Window:AddTab("Eggs", "egg"),
+    Potions = Window:AddTab("Potions", "vial"),
     Misc = Window:AddTab("Misc", "list"),
     Teleports = Window:AddTab("Teleports", "globe"),
     CPUSettings = Window:AddTab("CPU Settings", "cpu"),
@@ -124,6 +167,27 @@ TabsMainFunctions:AddToggle("AutoCollect", {
     end;
 });
 
+TabsMainFunctions:AddToggle("AutoClaimPlaytime", {
+    Text = "Auto Claim Playtime Rewards";
+    Default = false;
+    Callback = function(Value)
+        getgenv().Functions.AutoClaimPlaytime = Value;
+        task.spawn(function()
+            while Functions.AutoClaimPlaytime do
+                local claimed = ClaimAllPlaytimeRewards();
+                if claimed > 0 then
+                    Library:Notify({
+                        Title = "Playtime Rewards",
+                        Description = claimed .. " playtime rewards have been claimed.",
+                        Time = 3
+                    });
+                end
+                task.wait(60); -- Check every minute
+            end;
+        end);
+    end;
+});
+
 local TabsUntoggle = Tabs.Main:AddLeftGroupbox("Untoggle");
 
 local UntoggleAll = TabsUntoggle:AddButton({
@@ -132,7 +196,9 @@ local UntoggleAll = TabsUntoggle:AddButton({
         Toggles.AutoBubble:SetValue(false);
         Toggles.AutoSell:SetValue(false);
         Toggles.AutoCollect:SetValue(false);
+        Toggles.AutoClaimPlaytime:SetValue(false);
         Toggles.AutoMysteryBox:SetValue(false);
+        Toggles.AutoHatch:SetValue(false);
         Toggles.Disable3DRendering:SetValue(false);
         Toggles.BlackOutScreen:SetValue(false);
     end;
@@ -191,6 +257,177 @@ TabsOtherFunctions:AddButton({
             Time = 3
         })
     end
+});
+
+TabsOtherFunctions:AddButton({
+    Text = "Claim Playtime Rewards";
+    Func = function()
+        local claimed = ClaimAllPlaytimeRewards();
+        Library:Notify({
+            Title = "Playtime Rewards",
+            Description = claimed .. " playtime rewards have been claimed.",
+            Time = 3
+        });
+    end;
+});
+
+--[[ Eggs Tab ]]--
+local TabsEggFunctions = Tabs.Eggs:AddLeftGroupbox("Egg Hatching");
+
+-- Egg selection dropdown
+TabsEggFunctions:AddDropdown("EggSelection", {
+    Values = {"Common Egg", "Spotted Egg", "Iceshard Egg", "Spikey Egg", "Magma Egg", 
+              "Crystal Egg", "Lunar Egg", "Void Egg", "Hell Egg", "Nightmare Egg", 
+              "Rainbow Egg", "Infinity Egg", "Throwback Egg"},
+    Default = "Common Egg",
+    Text = "Select Egg",
+    Callback = function(Value)
+        getgenv().Functions.SelectedEgg = Value;
+    end;
+});
+
+-- Egg hatch amount dropdown
+TabsEggFunctions:AddDropdown("HatchAmount", {
+    Values = {"1", "Max"},
+    Default = "1",
+    Text = "Hatch Amount",
+    Callback = function(Value)
+        if Value == "1" then
+            getgenv().Functions.HatchAmount = 1;
+        else
+            getgenv().Functions.HatchAmount = 4; -- "Max" typically allows hatching 3 eggs at once
+        end
+    end;
+});
+
+-- Auto hatch toggle
+TabsEggFunctions:AddToggle("AutoHatch", {
+    Text = "Auto Hatch Eggs",
+    Default = false,
+    Callback = function(Value)
+        getgenv().Functions.AutoHatch = Value;
+        task.spawn(function()
+            while Functions.AutoHatch do
+                local args = {
+                    [1] = "HatchEgg",
+                    [2] = Functions.SelectedEgg,
+                    [3] = Functions.HatchAmount
+                }
+                game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+                task.wait(2); -- Wait between hatches
+            end;
+        end);
+    end;
+});
+
+-- Manual hatch button
+TabsEggFunctions:AddButton({
+    Text = "Hatch Egg Once",
+    Func = function()
+        local args = {
+            [1] = "HatchEgg",
+            [2] = Functions.SelectedEgg,
+            [3] = Functions.HatchAmount
+        }
+        game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+        Library:Notify({
+            Title = "Egg Hatched",
+            Description = "Hatched " .. Functions.SelectedEgg .. " " .. Functions.HatchAmount .. " time(s).",
+            Time = 3
+        });
+    end;
+});
+
+--[[ Potions Tab ]]--
+local TabsPotions = Tabs.Potions:AddLeftGroupbox("Craft Potions");
+
+TabsPotions:AddButton({
+    Text = "Craft Max Lucky Potion",
+    Func = function()
+        CraftMaxPotion("Lucky");
+    end;
+});
+
+TabsPotions:AddButton({
+    Text = "Craft Max Mythic Potion",
+    Func = function()
+        CraftMaxPotion("Mythic");
+    end;
+});
+
+TabsPotions:AddButton({
+    Text = "Craft Max Speed Potion",
+    Func = function()
+        CraftMaxPotion("Speed");
+    end;
+});
+
+local TabsPotionTier = Tabs.Potions:AddRightGroupbox("Craft Specific Tier");
+
+-- Lucky Potions
+TabsPotionTier:AddButton({
+    Text = "Craft Lucky Potion I",
+    Func = function()
+        local args = {
+            [1] = "CraftPotion",
+            [2] = "Lucky",
+            [3] = 1,
+            [4] = false
+        }
+        game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+    end;
+});
+
+TabsPotionTier:AddButton({
+    Text = "Craft Lucky Potion II",
+    Func = function()
+        local args = {
+            [1] = "CraftPotion",
+            [2] = "Lucky",
+            [3] = 2,
+            [4] = false
+        }
+        game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+    end;
+});
+
+TabsPotionTier:AddButton({
+    Text = "Craft Lucky Potion III",
+    Func = function()
+        local args = {
+            [1] = "CraftPotion",
+            [2] = "Lucky",
+            [3] = 3,
+            [4] = false
+        }
+        game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+    end;
+});
+
+TabsPotionTier:AddButton({
+    Text = "Craft Lucky Potion IV",
+    Func = function()
+        local args = {
+            [1] = "CraftPotion",
+            [2] = "Lucky",
+            [3] = 4,
+            [4] = false
+        }
+        game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+    end;
+});
+
+TabsPotionTier:AddButton({
+    Text = "Craft Lucky Potion V",
+    Func = function()
+        local args = {
+            [1] = "CraftPotion",
+            [2] = "Lucky",
+            [3] = 5,
+            [4] = false
+        }
+        game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+    end;
 });
 
 --[[ Misc Tab ]]--
