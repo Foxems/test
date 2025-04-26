@@ -109,7 +109,7 @@ local Window = Library:CreateWindow({
 local Tabs = {
     Main = Window:AddTab("Main", "user"),
     Eggs = Window:AddTab("Eggs", "egg"),
-    Potions = Window:AddTab("Potions", "flask"), -- Changed from "vial" to "flask" for compatibility
+    Potions = Window:AddTab("Potions", "list"), -- Changed from "vial" to "flask" for compatibility
     Misc = Window:AddTab("Misc", "list"),
     Teleports = Window:AddTab("Teleports", "globe"),
     CPUSettings = Window:AddTab("CPU Settings", "cpu"),
@@ -275,7 +275,8 @@ TabsOtherFunctions:AddButton({
 local TabsEggFunctions = Tabs.Eggs:AddLeftGroupbox("Egg Hatching");
 
 -- Add warning message about egg location
-TabsEggFunctions:AddLabel("⚠️ WARNING: You must be at the egg location to hatch it!");
+local warningLabel = TabsEggFunctions:AddLabel("⚠️ WARNING:");
+warningLabel:AddLabel("You must be at the egg location to hatch it!");
 
 -- Egg selection dropdown
 TabsEggFunctions:AddDropdown("EggSelection", {
