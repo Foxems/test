@@ -5,19 +5,37 @@ end;
 
 --[[ Service Variables ]]--
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 --[[ Main Configuration ]]--
 getgenv().Functions = {
     -- Main Features
-    AutoFeature1 = false;
-    AutoFeature2 = false;
-    AutoFeature3 = false;
-    AutoFeature4 = false;
+    AutoBubble = false;
+    AutoSell = false;
+    AutoCollect = false;
     
     -- Settings
     Disable3DRendering = false;
     BlackOutScreen = false;
 };
+
+--[[ Utility Functions ]]--
+local function CollectPickups()
+    for i, v in next, game:GetService("Workspace").Rendered:GetChildren() do
+        if v.Name == "Chunker" then
+            for i2, v2 in next, v:GetChildren() do
+                local Part, HasMeshPart = v2:FindFirstChild("Part"), v2:FindFirstChildWhichIsA("MeshPart");
+                local HasStars = Part and Part:FindFirstChild("Stars");
+                local HasPartMesh = Part and Part:FindFirstChild("Mesh");
+                if HasMeshPart or HasStars or HasPartMesh then
+                    game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Pickups"):WaitForChild("CollectPickup"):FireServer(v2.Name);
+                    v2:Destroy();
+                end;
+            end;
+        end;
+    end;
+end;
 
 --[[ Load Obsidian Library ]]--
 local Repository = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/";
@@ -29,7 +47,7 @@ local Toggles = Library.Toggles;
 
 --[[ Create Main Window ]]--
 local Window = Library:CreateWindow({
-    Title = "JustBGSI";
+    Title = "Bubble Gum Simulator";
     Footer = "Made by @cody | v1.0";
     NotifySide = "Right";
     ShowCustomCursor = true;
@@ -38,6 +56,7 @@ local Window = Library:CreateWindow({
 --[[ Create Tabs ]]--
 local Tabs = {
     Main = Window:AddTab("Main", "user"),
+    Teleports = Window:AddTab("Teleports", "globe"),
     CPUSettings = Window:AddTab("CPU Settings", "cpu"),
     ["UI Settings"] = Window:AddTab("UI Settings", "settings"),
 };
@@ -45,61 +64,49 @@ local Tabs = {
 --[[ Main Tab ]]--
 local TabsMainFunctions = Tabs.Main:AddLeftGroupbox("Main Functions");
 
-TabsMainFunctions:AddToggle("AutoFeature1", {
-    Text = "Auto Feature 1";
+TabsMainFunctions:AddToggle("AutoBubble", {
+    Text = "Auto Blow Bubbles";
     Default = false;
     Callback = function(Value)
-        getgenv().Functions.AutoFeature1 = Value;
+        getgenv().Functions.AutoBubble = Value;
         task.spawn(function()
-            while Functions.AutoFeature1 do
-                task.wait(1);
-                print("Auto Feature 1 Running");
-                -- Functionality would go here
+            while Functions.AutoBubble do
+                task.wait(0.1);
+                local args = {
+                    [1] = "BlowBubble"
+                }
+                game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
             end;
         end);
     end;
 });
 
-TabsMainFunctions:AddToggle("AutoFeature2", {
-    Text = "Auto Feature 2";
+TabsMainFunctions:AddToggle("AutoSell", {
+    Text = "Auto Sell Bubbles";
     Default = false;
     Callback = function(Value)
-        getgenv().Functions.AutoFeature2 = Value;
+        getgenv().Functions.AutoSell = Value;
         task.spawn(function()
-            while Functions.AutoFeature2 do
-                task.wait(1);
-                print("Auto Feature 2 Running");
-                -- Functionality would go here
+            while Functions.AutoSell do
+                task.wait(0.1);
+                local args = {
+                    [1] = "SellBubble"
+                }
+                game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
             end;
         end);
     end;
 });
 
-TabsMainFunctions:AddToggle("AutoFeature3", {
-    Text = "Auto Feature 3";
+TabsMainFunctions:AddToggle("AutoCollect", {
+    Text = "Auto Collect Pickups";
     Default = false;
     Callback = function(Value)
-        getgenv().Functions.AutoFeature3 = Value;
+        getgenv().Functions.AutoCollect = Value;
         task.spawn(function()
-            while Functions.AutoFeature3 do
+            while Functions.AutoCollect do
+                CollectPickups();
                 task.wait(1);
-                print("Auto Feature 3 Running");
-                -- Functionality would go here
-            end;
-        end);
-    end;
-});
-
-TabsMainFunctions:AddToggle("AutoFeature4", {
-    Text = "Auto Feature 4";
-    Default = false;
-    Callback = function(Value)
-        getgenv().Functions.AutoFeature4 = Value;
-        task.spawn(function()
-            while Functions.AutoFeature4 do
-                task.wait(1);
-                print("Auto Feature 4 Running");
-                -- Functionality would go here
             end;
         end);
     end;
@@ -110,10 +117,9 @@ local TabsUntoggle = Tabs.Main:AddLeftGroupbox("Untoggle");
 local UntoggleAll = TabsUntoggle:AddButton({
     Text = "Untoggle All";
     Func = function()
-        Toggles.AutoFeature1:SetValue(false);
-        Toggles.AutoFeature2:SetValue(false);
-        Toggles.AutoFeature3:SetValue(false);
-        Toggles.AutoFeature4:SetValue(false);
+        Toggles.AutoBubble:SetValue(false);
+        Toggles.AutoSell:SetValue(false);
+        Toggles.AutoCollect:SetValue(false);
         Toggles.Disable3DRendering:SetValue(false);
         Toggles.BlackOutScreen:SetValue(false);
     end;
@@ -124,26 +130,120 @@ local UntoggleAll = TabsUntoggle:AddButton({
 local TabsOtherFunctions = Tabs.Main:AddRightGroupbox("Other Functions");
 
 TabsOtherFunctions:AddButton({
-    Text = "Function 1";
+    Text = "Redeem All Codes";
     Func = function()
-        print("Function 1 Executed");
-        -- Functionality would go here
+        local Codes = {"easter", "RELEASE", "Lucky", "Thanks"};
+        for i, v in next, Codes do
+            game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Framework"):WaitForChild("Network"):WaitForChild("Remote"):WaitForChild("Function"):InvokeServer("RedeemCode", v);
+        end;
+        Library:Notify({
+            Title = "Codes Redeemed";
+            Description = "All available codes have been redeemed.";
+            Time = 3;
+        });
     end;
 });
 
-TabsOtherFunctions:AddButton({
-    Text = "Function 2";
+--[[ Teleport Tab ]]--
+local TabsTeleport = Tabs.Teleports:AddLeftGroupbox("Islands");
+
+TabsTeleport:AddButton({
+    Text = "Teleport to The Overworld";
     Func = function()
-        print("Function 2 Executed");
-        -- Functionality would go here
+        local args = {
+            [1] = "Teleport",
+            [2] = "Workspace.Worlds.The Overworld.FastTravel.Spawn"
+        }
+        game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
     end;
 });
 
-TabsOtherFunctions:AddButton({
-    Text = "Function 3";
+TabsTeleport:AddButton({
+    Text = "Teleport to Floating Island";
     Func = function()
-        print("Function 3 Executed");
-        -- Functionality would go here
+        local args = {
+            [1] = "Teleport",
+            [2] = "Workspace.Worlds.The Overworld.Islands.Floating Island.Island.Portal.Spawn"
+        }
+        game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+    end;
+});
+
+TabsTeleport:AddButton({
+    Text = "Teleport to Outer Space";
+    Func = function()
+        local args = {
+            [1] = "Teleport",
+            [2] = "Workspace.Worlds.The Overworld.Islands.Outer Space.Island.Portal.Spawn"
+        }
+        game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+    end;
+});
+
+TabsTeleport:AddButton({
+    Text = "Teleport to Twilight";
+    Func = function()
+        local args = {
+            [1] = "Teleport",
+            [2] = "Workspace.Worlds.The Overworld.Islands.Twilight.Island.Portal.Spawn"
+        }
+        game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+    end;
+});
+
+TabsTeleport:AddButton({
+    Text = "Teleport to The Void";
+    Func = function()
+        local args = {
+            [1] = "Teleport",
+            [2] = "Workspace.Worlds.The Overworld.Islands.The Void.Island.Portal.Spawn"
+        }
+        game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+    end;
+});
+
+TabsTeleport:AddButton({
+    Text = "Teleport to Zen";
+    Func = function()
+        local args = {
+            [1] = "Teleport",
+            [2] = "Workspace.Worlds.The Overworld.Islands.Zen.Island.Portal.Spawn"
+        }
+        game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+    end;
+});
+
+local TabsSpecialTeleport = Tabs.Teleports:AddRightGroupbox("Special Locations");
+
+TabsSpecialTeleport:AddButton({
+    Text = "Teleport to Event";
+    Func = function()
+        local args = {
+            [1] = "Teleport",
+            [2] = "Workspace.Event.Portal.Spawn"
+        }
+        game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+    end;
+});
+
+TabsSpecialTeleport:AddButton({
+    Text = "Teleport to Coin Farm Area";
+    Func = function()
+        -- First teleport to Zen
+        local args = {
+            [1] = "Teleport",
+            [2] = "Workspace.Worlds.The Overworld.Islands.Zen.Island.Portal.Spawn"
+        }
+        game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+        
+        -- Wait for teleport to complete
+        task.wait(1);
+        
+        -- Then move to the specific coin farm area
+        local character = game.Players.LocalPlayer.Character
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            character.HumanoidRootPart.CFrame = CFrame.new(4, 15973, 44)
+        end
     end;
 });
 
@@ -305,11 +405,17 @@ SaveManager:SetLibrary(Library);
 SaveManager:IgnoreThemeSettings();
 SaveManager:SetIgnoreIndexes({"MenuKeybind"});
 
-ThemeManager:SetFolder("JustBGSI");
+ThemeManager:SetFolder("BubbleGumSimulator");
 SaveManager:BuildConfigSection(Tabs["UI Settings"]);
 ThemeManager:ApplyToTab(Tabs["UI Settings"]);
 SaveManager:LoadAutoloadConfig();
 
 --[[ Initialization ]]--
-print("JustBGSI Loaded Successfully")
+Library:Notify({
+    Title = "Script Loaded";
+    Description = "Bubble Gum Simulator script has loaded successfully!";
+    Time = 3;
+});
+
+print("Bubble Gum Simulator script loaded successfully")
 print("Press RightShift to toggle menu visibility.")
