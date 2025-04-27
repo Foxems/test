@@ -109,7 +109,7 @@ local Window = Library:CreateWindow({
 local Tabs = {
     Main = Window:AddTab("Main", "user"),
     Eggs = Window:AddTab("Eggs", "egg"),
-    Potions = Window:AddTab("Potions", "list"), -- Changed from "vial" to "flask" for compatibility
+    Potions = Window:AddTab("Potions", "flask"), -- Changed icon for better compatibility
     Misc = Window:AddTab("Misc", "list"),
     Teleports = Window:AddTab("Teleports", "globe"),
     CPUSettings = Window:AddTab("CPU Settings", "cpu"),
@@ -137,7 +137,7 @@ TabsMainFunctions:AddToggle("AutoBubble", {
 });
 
 TabsMainFunctions:AddToggle("AutoSell", {
-    Text = "Auto Sell Bubbles";
+    Text = "Auto Sell Bubbles (Must be at sell area)";
     Default = false;
     Callback = function(Value)
         getgenv().Functions.AutoSell = Value;
@@ -275,8 +275,7 @@ TabsOtherFunctions:AddButton({
 local TabsEggFunctions = Tabs.Eggs:AddLeftGroupbox("Egg Hatching");
 
 -- Add warning message about egg location
-local warningLabel = TabsEggFunctions:AddLabel("⚠️ WARNING:");
-warningLabel:AddLabel("You must be at the egg location to hatch it!");
+TabsEggFunctions:AddLabel("⚠️ WARNING: You must be at the egg location to hatch it!");
 
 -- Egg selection dropdown
 TabsEggFunctions:AddDropdown("EggSelection", {
@@ -299,7 +298,7 @@ TabsEggFunctions:AddDropdown("HatchAmount", {
         if Value == "1" then
             getgenv().Functions.HatchAmount = 1;
         else
-            getgenv().Functions.HatchAmount = 10; -- "Max" typically allows hatching 3 eggs at once
+            getgenv().Functions.HatchAmount = 4; -- "Max" typically allows hatching multiple eggs at once
         end
     end;
 });
@@ -342,6 +341,38 @@ TabsEggFunctions:AddButton({
     end;
 });
 
+-- Multi-batch hatching feature
+TabsEggFunctions:AddSlider("BatchCount", {
+    Text = "Batch Count",
+    Default = 2,
+    Min = 1,
+    Max = 10,
+    Rounding = 0,
+    Suffix = " batches"
+});
+
+TabsEggFunctions:AddButton({
+    Text = "Multi-Batch Hatch",
+    Func = function()
+        local batchCount = Options.BatchCount.Value;
+        for i = 1, batchCount do
+            local args = {
+                [1] = "HatchEgg",
+                [2] = Functions.SelectedEgg,
+                [3] = Functions.HatchAmount
+            }
+            game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+            task.wait(0.01); -- Minimal delay between batches
+        end
+        
+        Library:Notify({
+            Title = "Multi-Batch Hatching",
+            Description = "Sent " .. batchCount .. " batches of " .. Functions.HatchAmount .. " egg requests.",
+            Time = 3
+        });
+    end;
+});
+
 --[[ Potions Tab ]]--
 local TabsPotions = Tabs.Potions:AddLeftGroupbox("Craft Potions");
 
@@ -369,6 +400,8 @@ TabsPotions:AddButton({
 local TabsPotionTier = Tabs.Potions:AddRightGroupbox("Craft Specific Tier");
 
 -- Lucky Potions
+TabsPotionTier:AddLabel("Lucky Potions");
+
 TabsPotionTier:AddButton({
     Text = "Craft Lucky Potion I",
     Func = function()
@@ -379,6 +412,11 @@ TabsPotionTier:AddButton({
             [4] = false
         }
         game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+        Library:Notify({
+            Title = "Potion Crafted",
+            Description = "Lucky Potion I has been crafted.",
+            Time = 3
+        });
     end;
 });
 
@@ -392,6 +430,11 @@ TabsPotionTier:AddButton({
             [4] = false
         }
         game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+        Library:Notify({
+            Title = "Potion Crafted",
+            Description = "Lucky Potion II has been crafted.",
+            Time = 3
+        });
     end;
 });
 
@@ -405,6 +448,11 @@ TabsPotionTier:AddButton({
             [4] = false
         }
         game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+        Library:Notify({
+            Title = "Potion Crafted",
+            Description = "Lucky Potion III has been crafted.",
+            Time = 3
+        });
     end;
 });
 
@@ -418,6 +466,11 @@ TabsPotionTier:AddButton({
             [4] = false
         }
         game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+        Library:Notify({
+            Title = "Potion Crafted",
+            Description = "Lucky Potion IV has been crafted.",
+            Time = 3
+        });
     end;
 });
 
@@ -431,6 +484,51 @@ TabsPotionTier:AddButton({
             [4] = false
         }
         game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+        Library:Notify({
+            Title = "Potion Crafted",
+            Description = "Lucky Potion V has been crafted.",
+            Time = 3
+        });
+    end;
+});
+
+-- Mythic Potions
+TabsPotionTier:AddDivider();
+TabsPotionTier:AddLabel("Mythic Potions");
+
+TabsPotionTier:AddButton({
+    Text = "Craft Mythic Potion I",
+    Func = function()
+        local args = {
+            [1] = "CraftPotion",
+            [2] = "Mythic",
+            [3] = 1,
+            [4] = false
+        }
+        game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+        Library:Notify({
+            Title = "Potion Crafted",
+            Description = "Mythic Potion I has been crafted.",
+            Time = 3
+        });
+    end;
+});
+
+TabsPotionTier:AddButton({
+    Text = "Craft Mythic Potion V",
+    Func = function()
+        local args = {
+            [1] = "CraftPotion",
+            [2] = "Mythic",
+            [3] = 5,
+            [4] = false
+        }
+        game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
+        Library:Notify({
+            Title = "Potion Crafted",
+            Description = "Mythic Potion V has been crafted.",
+            Time = 3
+        });
     end;
 });
 
