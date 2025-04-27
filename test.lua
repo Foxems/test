@@ -299,7 +299,7 @@ TabsEggFunctions:AddDropdown("HatchAmount", {
         if Value == "1" then
             getgenv().Functions.HatchAmount = 1;
         else
-            getgenv().Functions.HatchAmount = 4; -- "Max" typically allows hatching 3 eggs at once
+            getgenv().Functions.HatchAmount = 10; -- "Max" typically allows hatching 3 eggs at once
         end
     end;
 });
