@@ -61,7 +61,7 @@ local function CraftMaxPotion(potionType)
             [1] = "CraftPotion",
             [2] = potionType,
             [3] = tier,
-            [4] = false
+            [4] = true
         }
         game:GetService("ReplicatedStorage").Shared.Framework.Network.Remote.Event:FireServer(unpack(args));
         task.wait(0.5); -- Wait a bit between crafting
@@ -298,7 +298,7 @@ TabsEggFunctions:AddDropdown("HatchAmount", {
         if Value == "1" then
             getgenv().Functions.HatchAmount = 1;
         else
-            getgenv().Functions.HatchAmount = 4; -- "Max" typically allows hatching multiple eggs at once
+            getgenv().Functions.HatchAmount = 10; -- "Max" typically allows hatching multiple eggs at once
         end
     end;
 });
